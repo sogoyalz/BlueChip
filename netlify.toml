@@ -1,0 +1,13 @@
+[build]
+  # The React app lives in the frontend/ subfolder, not the repo root.
+  base = "frontend"
+  # CI=false so CRA's ESLint warnings don't get treated as build-failing errors.
+  command = "CI=false npm run build"
+  publish = "build"
+
+# Single-page app: send all routes to index.html so React Router can handle them.
+# Without this, refreshing /about, /login, etc. returns a 404.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
