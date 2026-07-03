@@ -30,8 +30,8 @@ BlueChip/
 
 | App | Tech | Port |
 |-----|------|------|
-| **frontend** | React 19, React Router, Bootstrap, Axios | 3000 |
-| **dashboard** | React 19, Material UI, Chart.js, Axios | 3001 |
+| **frontend** | React 19 + TypeScript, React Router, Bootstrap, Axios | 3000 |
+| **dashboard** | React 19 + TypeScript, Material UI, Chart.js, Axios | 3001 |
 | **backend** | Express 5, Mongoose, JWT, bcrypt | 3002 |
 
 ---
@@ -39,7 +39,7 @@ BlueChip/
 ## 🛠️ Tech Stack
 
 **Frontend & Dashboard**
-- React 19 + React Router 7
+- React 19 + TypeScript (strict) + React Router 7
 - Material UI (dashboard), Bootstrap (landing)
 - Chart.js / react-chartjs-2
 - Axios, react-toastify, react-cookie
@@ -104,6 +104,9 @@ PORT=3002
 **`frontend/.env`**
 ```env
 PORT=3000
+# Optional — override backend origins for deployed environments:
+# REACT_APP_API_URL=https://your-backend.example.com
+# REACT_APP_DASHBOARD_URL=https://your-dashboard.example.com
 ```
 
 **`dashboard/.env`**
@@ -157,13 +160,13 @@ backend/
 frontend/src/landing_page/
 ├── home/  about/  products/  pricing/  support/
 ├── login/  signup/
-├── Navbar.js  Footer.js  ...
+├── Navbar.tsx  Footer.tsx  ...
 └── test/           # component tests
 
 dashboard/src/components/
-├── Dashboard.js  Holdings.js  Positions.js  Orders.js
-├── Funds.js  WatchList.js  Summary.js
-├── BuyActionWindow.js  charts (Doughnut, Vertical)
+├── Dashboard.tsx  Holdings.tsx  Positions.tsx  Orders.tsx
+├── Funds.tsx  WatchList.tsx  Summary.tsx
+├── BuyActionWindow.tsx  charts (Doughnut, Vertical)
 └── ...
 ```
 

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 420" width="520" height="420">
+  <!-- One account, every market — hub illustration -->
+  <g stroke="#2a2a2a" stroke-width="1.5">
+    <line x1="260" y1="210" x2="110" y2="80"/>
+    <line x1="260" y1="210" x2="410" y2="80"/>
+    <line x1="260" y1="210" x2="70" y2="230"/>
+    <line x1="260" y1="210" x2="450" y2="230"/>
+    <line x1="260" y1="210" x2="140" y2="350"/>
+    <line x1="260" y1="210" x2="380" y2="350"/>
+  </g>
+  <rect x="216" y="166" width="88" height="88" rx="20" fill="#e50914"/>
+  <rect x="236" y="204" width="10" height="26" rx="2" fill="#ffffff" opacity="0.8"/>
+  <rect x="254" y="192" width="10" height="38" rx="2" fill="#ffffff" opacity="0.9"/>
+  <rect x="272" y="180" width="10" height="50" rx="2" fill="#ffffff"/>
+  <g font-family="Inter, sans-serif" font-size="13" text-anchor="middle">
+    <circle cx="110" cy="80" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
+    <text x="110" y="85" fill="#f5f5f5">Stocks</text>
+    <circle cx="410" cy="80" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
+    <text x="410" y="85" fill="#f5f5f5">F&amp;O</text>
+    <circle cx="70" cy="230" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
+    <text x="70" y="235" fill="#f5f5f5">IPOs</text>
+    <circle cx="450" cy="230" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
+    <text x="450" y="235" fill="#f5f5f5">Bonds</text>
+    <circle cx="140" cy="350" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
+    <text x="140" y="346" fill="#f5f5f5">Mutual</text>
+    <text x="140" y="362" fill="#f5f5f5">funds</text>
+    <circle cx="380" cy="350" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
+    <text x="380" y="355" fill="#f5f5f5">ETFs</text>
+  </g>
+</svg>

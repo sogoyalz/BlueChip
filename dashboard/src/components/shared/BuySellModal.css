@@ -1,0 +1,138 @@
+/* Buy/Sell order modal — dimmed overlay with a centered card. */
+.trade-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.trade-modal {
+  width: min(460px, calc(100vw - 32px));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.trade-modal .window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.trade-modal .window-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.mode-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.mode-tab {
+  font-family: var(--font);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.mode-tab.active.buy {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.mode-tab.active.sell {
+  color: var(--loss);
+  background: var(--loss-soft);
+  border-color: var(--loss);
+}
+
+.mode-tab:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.trade-modal .regular-order {
+  padding: 20px;
+  background-color: var(--surface);
+}
+
+.trade-modal .inputs {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.trade-modal .inputs fieldset {
+  flex: 1;
+  margin: 0;
+  padding: 4px 10px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.trade-modal .inputs fieldset:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.trade-modal .inputs fieldset legend {
+  padding: 0 6px;
+  margin-left: 4px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.trade-modal .inputs fieldset input {
+  width: 100%;
+  border: none;
+  padding: 4px 6px;
+  font-family: var(--font);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: transparent;
+}
+
+.trade-modal .inputs fieldset input:focus {
+  outline: none;
+}
+
+.trade-modal .buttons {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.trade-modal .buttons span {
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+.trade-modal .buttons > div {
+  display: flex;
+  gap: 8px;
+}
