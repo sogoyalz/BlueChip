@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 320" width="420" height="320">
+  <rect x="60" y="50" width="300" height="220" rx="14" fill="#1a1a1a" stroke="#2a2a2a"/>
+  <line x1="210" y1="70" x2="210" y2="250" stroke="#2a2a2a"/>
+  <g stroke="#404040" stroke-width="2" stroke-linecap="round">
+    <line x1="88" y1="100" x2="182" y2="100"/>
+    <line x1="88" y1="130" x2="182" y2="130"/>
+    <line x1="88" y1="160" x2="160" y2="160"/>
+  </g>
+  <path d="M238 200 L262 160 L286 178 L310 120 L334 138" fill="none" stroke="#e50914" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="334" cy="138" r="4" fill="#e50914"/>
+  <text x="88" y="228" font-family="Inter, sans-serif" font-size="13" fill="#a0a0a0">Chapter 1</text>
+  <text x="88" y="248" font-family="Inter, sans-serif" font-size="13" fill="#f5f5f5">Markets 101</text>
+</svg>

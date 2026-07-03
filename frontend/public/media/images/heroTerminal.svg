@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" width="1200" height="520">
+  <!-- BlueChip Terminal — original illustration -->
+  <defs>
+    <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e50914" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#e50914" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- window -->
+  <rect x="60" y="20" width="1080" height="480" rx="16" fill="#1a1a1a" stroke="#2a2a2a"/>
+
+  <!-- top bar -->
+  <rect x="60" y="20" width="1080" height="56" rx="16" fill="#1a1a1a"/>
+  <line x1="60" y1="76" x2="1140" y2="76" stroke="#2a2a2a"/>
+  <rect x="88" y="38" width="20" height="20" rx="5" fill="#e50914"/>
+  <text x="116" y="54" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#f5f5f5">Blue<tspan fill="#e50914">Chip</tspan></text>
+  <text x="820" y="54" font-family="Inter, sans-serif" font-size="13" fill="#a0a0a0">ALPHA 50 <tspan fill="#00c853">21,482.10 ▲ 0.84%</tspan></text>
+  <text x="1010" y="54" font-family="Inter, sans-serif" font-size="13" fill="#a0a0a0">VOLT <tspan fill="#ff5252">64,210.55 ▼ 0.31%</tspan></text>
+
+  <!-- watchlist panel -->
+  <rect x="84" y="96" width="280" height="380" rx="10" fill="#0f0f0f" stroke="#2a2a2a"/>
+  <rect x="100" y="112" width="248" height="30" rx="6" fill="#1a1a1a" stroke="#2a2a2a"/>
+  <text x="112" y="132" font-family="Inter, sans-serif" font-size="12" fill="#666666">Search instruments…</text>
+
+  <g font-family="Inter, sans-serif" font-size="13">
+    <text x="104" y="176" fill="#f5f5f5">ORION</text><text x="344" y="176" fill="#00c853" text-anchor="end">1,245.60 ▲</text>
+    <line x1="100" y1="190" x2="348" y2="190" stroke="#2a2a2a"/>
+    <text x="104" y="216" fill="#f5f5f5">HELIX</text><text x="344" y="216" fill="#ff5252" text-anchor="end">832.15 ▼</text>
+    <line x1="100" y1="230" x2="348" y2="230" stroke="#2a2a2a"/>
+    <text x="104" y="256" fill="#f5f5f5">NOVA</text><text x="344" y="256" fill="#00c853" text-anchor="end">3,411.90 ▲</text>
+    <line x1="100" y1="270" x2="348" y2="270" stroke="#2a2a2a"/>
+    <text x="104" y="296" fill="#f5f5f5">ZENITH</text><text x="344" y="296" fill="#00c853" text-anchor="end">567.40 ▲</text>
+    <line x1="100" y1="310" x2="348" y2="310" stroke="#2a2a2a"/>
+    <text x="104" y="336" fill="#f5f5f5">QUARK</text><text x="344" y="336" fill="#ff5252" text-anchor="end">129.85 ▼</text>
+    <line x1="100" y1="350" x2="348" y2="350" stroke="#2a2a2a"/>
+    <text x="104" y="376" fill="#f5f5f5">ATLAS</text><text x="344" y="376" fill="#00c853" text-anchor="end">2,208.00 ▲</text>
+  </g>
+  <rect x="100" y="412" width="118" height="34" rx="8" fill="#e50914"/>
+  <text x="159" y="434" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#ffffff" text-anchor="middle">Buy</text>
+  <rect x="230" y="412" width="118" height="34" rx="8" fill="none" stroke="#404040"/>
+  <text x="289" y="434" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#f5f5f5" text-anchor="middle">Sell</text>
+
+  <!-- chart panel -->
+  <rect x="384" y="96" width="732" height="290" rx="10" fill="#0f0f0f" stroke="#2a2a2a"/>
+  <text x="404" y="126" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#f5f5f5">ORION</text>
+  <text x="404" y="146" font-family="Inter, sans-serif" font-size="13" fill="#00c853">1,245.60 ▲ 2.4%</text>
+  <g stroke="#2a2a2a" stroke-dasharray="3 5">
+    <line x1="404" y1="180" x2="1096" y2="180"/>
+    <line x1="404" y1="240" x2="1096" y2="240"/>
+    <line x1="404" y1="300" x2="1096" y2="300"/>
+  </g>
+  <path d="M404 330 L470 310 L530 322 L590 280 L650 292 L710 250 L770 262 L830 220 L890 235 L950 190 L1010 205 L1070 165 L1096 172 L1096 360 L404 360 Z" fill="url(#chartFill)"/>
+  <path d="M404 330 L470 310 L530 322 L590 280 L650 292 L710 250 L770 262 L830 220 L890 235 L950 190 L1010 205 L1070 165 L1096 172" fill="none" stroke="#e50914" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="1070" cy="165" r="5" fill="#e50914"/>
+  <circle cx="1070" cy="165" r="10" fill="#e50914" opacity="0.25"/>
+
+  <!-- stat cards -->
+  <g font-family="Inter, sans-serif">
+    <rect x="384" y="402" width="230" height="74" rx="10" fill="#0f0f0f" stroke="#2a2a2a"/>
+    <text x="404" y="430" font-size="11" fill="#666666" letter-spacing="1">INVESTED</text>
+    <text x="404" y="456" font-size="18" font-weight="600" fill="#f5f5f5">4,08,650</text>
+
+    <rect x="634" y="402" width="230" height="74" rx="10" fill="#0f0f0f" stroke="#2a2a2a"/>
+    <text x="654" y="430" font-size="11" fill="#666666" letter-spacing="1">CURRENT VALUE</text>
+    <text x="654" y="456" font-size="18" font-weight="600" fill="#f5f5f5">4,52,190</text>
+
+    <rect x="884" y="402" width="232" height="74" rx="10" fill="#0f0f0f" stroke="#2a2a2a"/>
+    <text x="904" y="430" font-size="11" fill="#666666" letter-spacing="1">TOTAL P&amp;L</text>
+    <text x="904" y="456" font-size="18" font-weight="600" fill="#00c853">+43,540 ▲ 10.6%</text>
+  </g>
+</svg>

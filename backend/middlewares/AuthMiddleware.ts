@@ -1,0 +1,77 @@
+import { Request, Response, NextFunction } from "express";
+import jwt, { JwtPayload, VerifyErrors } from "jsonwebtoken";
+
+type JwtVerifyResult = string | JwtPayload | undefined;
+import { HydratedDocument } from "mongoose";
+import { UserModel } from "../model/UserModel";
+import { IUser } from "../schemas/UserSchema";
+import "dotenv/config";
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: HydratedDocument<IUser>;
+    }
+  }
+}
+
+// Used by the frontend's "am I still logged in?" check (POST /).
+// Responds with a status flag rather than calling next().
+export const userVerification = (req: Request, res: Response): void => {
+  const token = req.cookies.token; // read the cookie
+
+  if (!token) {
+    res.json({ status: false }); // no token = not logged in
+    return;
+  }
+
+  jwt.verify(token, process.env.TOKEN_KEY as string, async (err: VerifyErrors | null, data: JwtVerifyResult) => {
+    if (err) {
+      return res.json({ status: false }); // token is fake/expired
+    }
+    try {
+      const payload = data as JwtPayload;
+      const user = await UserModel.findById(payload.id); // payload.id came from the token
+      if (user) return res.json({ status: true, user: user.username });
+      return res.json({ status: false });
+    } catch (dbErr) {
+      console.error(dbErr);
+      return res.status(500).json({ status: false });
+    }
+  });
+};
+
+// Route GUARD for protected data endpoints. On success calls next();
+// otherwise responds 401. Accepts the token from the cookie, an
+// Authorization: Bearer header, or a ?token= query param (the dashboard
+// lives on a different origin, so the header/query fallbacks matter).
+export const verifyToken = (req: Request, res: Response, next: NextFunction): void => {
+  const bearer = req.headers.authorization;
+  const token =
+    req.cookies.token ||
+    (bearer && bearer.startsWith("Bearer ") ? bearer.slice(7) : null) ||
+    (typeof req.query.token === "string" ? req.query.token : null);
+
+  if (!token) {
+    res.status(401).json({ status: false, message: "No token provided" });
+    return;
+  }
+
+  jwt.verify(token, process.env.TOKEN_KEY as string, async (err: VerifyErrors | null, data: JwtVerifyResult) => {
+    if (err) {
+      return res.status(401).json({ status: false, message: "Invalid or expired token" });
+    }
+    try {
+      const payload = data as JwtPayload;
+      const user = await UserModel.findById(payload.id);
+      if (!user) {
+        return res.status(401).json({ status: false, message: "User not found" });
+      }
+      req.user = user; // make the authenticated user available downstream
+      next();
+    } catch (dbErr) {
+      console.error(dbErr);
+      return res.status(500).json({ status: false, message: "Auth check failed" });
+    }
+  });
+};
