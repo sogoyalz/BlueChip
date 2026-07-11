@@ -136,3 +136,28 @@
   display: flex;
   gap: 8px;
 }
+
+.trade-modal .window-title .live-quote {
+  color: var(--ink-2);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.trade-modal .type-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.trade-modal .inputs fieldset input[readonly] {
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.trade-modal .paper-note {
+  margin: 0;
+  padding: 8px 20px 12px;
+  font-size: 0.68rem;
+  color: var(--ink-3);
+  background: var(--bg);
+}

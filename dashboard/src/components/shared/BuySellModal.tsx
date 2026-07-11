@@ -1,64 +1,121 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 
 import axios from "axios";
 import { useCookies } from "react-cookie";
 import { toast } from "react-toastify";
 
 import GeneralContext from "../GeneralContext";
-import { TradeMode } from "../../types";
+import { usePrices } from "../PricesContext";
+import { Account, Order, OrderType, TradeMode } from "../../types";
+import { API_URL } from "../../config";
 
 import "./BuySellModal.css";
 
 interface BuySellModalProps {
-  uid: string;
+  uid: string; // Gemini pair, e.g. "BTCUSD"
   initialMode?: TradeMode;
 }
 
+const fmt$ = (n: number) =>
+  "$" +
+  n.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
 const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
   const [mode, setMode] = useState<TradeMode>(initialMode);
-  const [stockQuantity, setStockQuantity] = useState(1);
-  const [stockPrice, setStockPrice] = useState(0.0);
+  const [orderType, setOrderType] = useState<OrderType>("MARKET");
+  const [qty, setQty] = useState("");
+  const [limitPrice, setLimitPrice] = useState("");
+  const [balance, setBalance] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const generalContext = useContext(GeneralContext);
+  const { prices, symbols } = usePrices();
   const [cookies] = useCookies(["token"]);
 
   const isBuy = mode === "BUY";
-  const marginRequired =
-    Number.isFinite(stockQuantity) && Number.isFinite(stockPrice)
-      ? Math.max(stockQuantity * stockPrice, 0)
+  const livePrice = prices[uid]?.price;
+  const base = symbols.find((s) => s.symbol === uid)?.base ?? uid;
+
+  // Show available cash so the user knows what they can afford.
+  useEffect(() => {
+    if (!cookies.token) return;
+    axios
+      .get<Account>(`${API_URL}/api/account`, {
+        params: { token: cookies.token },
+        withCredentials: true,
+      })
+      .then((res) => setBalance(res.data.balance))
+      .catch((err) => console.error("Failed to load balance:", err));
+  }, [cookies.token]);
+
+  const numQty = Number(qty);
+  const numLimit = Number(limitPrice);
+  const effectivePrice = orderType === "LIMIT" ? numLimit : livePrice ?? 0;
+  const estimated =
+    Number.isFinite(numQty) && numQty > 0 && Number.isFinite(effectivePrice)
+      ? numQty * effectivePrice
       : 0;
+
+  const switchToLimit = () => {
+    setOrderType("LIMIT");
+    // Prefill with the live price so the user tweaks, not types from scratch.
+    if (!limitPrice && livePrice) setLimitPrice(String(livePrice));
+  };
 
   const handleSubmit = async () => {
     // Mirror the server's validation so bad input fails fast with a clear
     // message instead of a generic request error.
-    if (!Number.isFinite(stockQuantity) || stockQuantity <= 0) {
+    if (!Number.isFinite(numQty) || numQty <= 0) {
       toast.error("Quantity must be a number greater than 0.");
       return;
     }
-    if (!Number.isFinite(stockPrice) || stockPrice < 0) {
-      toast.error("Price must be a number of at least 0.");
+    if (orderType === "LIMIT" && (!Number.isFinite(numLimit) || numLimit <= 0)) {
+      toast.error("Limit price must be a number greater than 0.");
       return;
     }
+    setSubmitting(true);
     try {
-      await axios.post(
-        "http://localhost:3002/neworder",
+      const { data } = await axios.post<{ order: Order }>(
+        `${API_URL}/api/orders`,
         {
-          name: uid,
-          qty: stockQuantity,
-          price: stockPrice,
-          mode,
+          symbol: uid,
+          side: mode,
+          type: orderType,
+          qty: numQty,
+          ...(orderType === "LIMIT" ? { limitPrice: numLimit } : {}),
         },
         {
           params: { token: cookies.token },
           withCredentials: true,
         }
       );
-      toast.success(`${isBuy ? "Buy" : "Sell"} order placed for ${uid}`);
-      generalContext.closeTradeWindow();
+      const order = data.order;
+      if (order.status === "FILLED") {
+        toast.success(
+          `${isBuy ? "Bought" : "Sold"} ${order.qty} ${base} at ${fmt$(order.fillPrice!)}`
+        );
+        generalContext.closeTradeWindow();
+      } else if (order.status === "OPEN") {
+        toast.info(
+          `Limit ${mode.toLowerCase()} placed: ${order.qty} ${base} @ ${fmt$(order.limitPrice!)}`
+        );
+        generalContext.closeTradeWindow();
+      } else {
+        // REJECTED — an order outcome, not a request error
+        toast.error(order.reason || "Order rejected.");
+      }
     } catch (err) {
       console.error("Failed to place order:", err);
-      toast.error("Failed to place order. Please try again.");
+      const message = axios.isAxiosError(err)
+        ? err.response?.data?.message
+        : undefined;
+      toast.error(message || "Failed to place order. Please try again.");
       // keep the window open so the user can retry
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -79,7 +136,12 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="window-header">
-          <span className="window-title">{uid}</span>
+          <span className="window-title">
+            {base}
+            <span className="live-quote">
+              {livePrice ? ` · ${fmt$(livePrice)}` : ""}
+            </span>
+          </span>
           <div className="mode-tabs" role="tablist">
             <button
               type="button"
@@ -102,42 +164,80 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
           </div>
         </div>
         <div className="regular-order">
+          <div className="type-row" role="tablist" aria-label="Order type">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={orderType === "MARKET"}
+              className={`mode-tab ${orderType === "MARKET" ? "active buy" : ""}`}
+              onClick={() => setOrderType("MARKET")}
+            >
+              Market
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={orderType === "LIMIT"}
+              className={`mode-tab ${orderType === "LIMIT" ? "active buy" : ""}`}
+              onClick={switchToLimit}
+            >
+              Limit
+            </button>
+          </div>
           <div className="inputs">
             <fieldset>
-              <legend>Qty.</legend>
+              <legend>Qty. ({base})</legend>
               <input
                 type="number"
                 name="qty"
                 id="qty"
-                onChange={(e) => setStockQuantity(Number(e.target.value))}
-                value={stockQuantity}
+                step="any"
+                min="0"
+                placeholder="0.00"
+                onChange={(e) => setQty(e.target.value)}
+                value={qty}
               />
             </fieldset>
-            <fieldset>
-              <legend>Price</legend>
-              <input
-                type="number"
-                name="price"
-                id="price"
-                step="0.05"
-                onChange={(e) => setStockPrice(Number(e.target.value))}
-                value={stockPrice}
-              />
-            </fieldset>
+            {orderType === "LIMIT" ? (
+              <fieldset>
+                <legend>Limit price (USD)</legend>
+                <input
+                  type="number"
+                  name="price"
+                  id="price"
+                  step="any"
+                  min="0"
+                  onChange={(e) => setLimitPrice(e.target.value)}
+                  value={limitPrice}
+                />
+              </fieldset>
+            ) : (
+              <fieldset>
+                <legend>Market price</legend>
+                <input
+                  type="text"
+                  readOnly
+                  tabIndex={-1}
+                  value={livePrice ? fmt$(livePrice) : "…"}
+                />
+              </fieldset>
+            )}
           </div>
         </div>
 
         <div className="buttons">
           <span className="num">
-            Margin required ₹{marginRequired.toFixed(2)}
+            {isBuy ? "Est. cost" : "Est. proceeds"} {fmt$(estimated)}
+            {balance !== null && ` · Cash ${fmt$(balance)}`}
           </span>
           <div>
             <button
               type="button"
               className={`btn ${isBuy ? "btn-red" : "btn-outline"}`}
               onClick={handleSubmit}
+              disabled={submitting}
             >
-              {isBuy ? "Buy" : "Sell"}
+              {submitting ? "Placing…" : isBuy ? "Buy" : "Sell"}
             </button>
             <button
               type="button"
@@ -148,6 +248,9 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
             </button>
           </div>
         </div>
+        <p className="paper-note">
+          Paper trading with simulated funds — not real money. Prices via Gemini.
+        </p>
       </div>
     </div>
   );
