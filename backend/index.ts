@@ -9,98 +9,155 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 
 import { HoldingsModel } from "./model/HoldingsModel";
-import { PositionsModel } from "./model/PositionsModel";
 import { OrdersModel } from "./model/OrdersModel";
+import { UserModel } from "./model/UserModel";
 import authRoute from "./routes/AuthRoute";
+import marketRoute from "./routes/MarketRoute";
+import orderRoute from "./routes/OrderRoute";
+import portfolioRoute from "./routes/PortfolioRoute";
 import { verifyToken } from "./middlewares/AuthMiddleware";
+import { STARTING_CASH, roundUsd } from "./util/money";
+import { getPrice, startPolling } from "./services/priceFeed";
+import { startGeminiWs } from "./services/geminiWs";
+import { startMatcher } from "./services/matcher";
+import { snapshotUser, startSnapshots } from "./services/snapshots";
+import { authLimiter, generalLimiter } from "./middlewares/rateLimit";
+import { isWsConnected } from "./services/geminiWs";
+import { SYMBOLS } from "./config/symbols";
+import { isFresh } from "./services/priceFeed";
+import { fetchSymbols } from "./services/gemini";
+import { validateSymbolsAgainstGemini } from "./config/symbols";
 
 const PORT = process.env.PORT || 3002;
 const uri = process.env.MONGO_URL;
 
 const app = express();
 
+// Render (and most hosts) sit behind a reverse proxy; without this the
+// rate limiter would bucket every visitor under the proxy's IP.
+app.set("trust proxy", 1);
+
+const corsOrigins = (
+  process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001"
+).split(",");
+
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:3001"], // your two React apps
+    origin: corsOrigins,
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true, // <-- REQUIRED so cookies are allowed
   })
 );
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: "10kb" })); // no endpoint needs big bodies
 app.use(cookieParser());
+app.use(generalLimiter);
 
+app.use(["/signup", "/login"], authLimiter); // brute-force protection
 app.use("/", authRoute); // mounts /signup, /login, /
+app.use("/", marketRoute); // mounts /api/symbols, /api/prices (public)
+app.use("/", orderRoute); // mounts /api/orders* (auth)
+app.use("/", portfolioRoute); // mounts /api/leaderboard (auth)
 
 app.get("/allHoldings", verifyToken, async (req, res) => {
   try {
-    const allHoldings = await HoldingsModel.find({});
-    res.json(allHoldings);
+    const holdings = await HoldingsModel.find({ userId: req.user!._id });
+    // Enrich with live prices from the shared Gemini cache.
+    const enriched = holdings.map((h) => {
+      const live = getPrice(h.symbol);
+      return {
+        _id: h._id,
+        symbol: h.symbol,
+        qty: h.qty,
+        avgCost: h.avgCost,
+        price: live?.price,
+        dayChangePct: live?.changePct24h,
+      };
+    });
+    res.json(enriched);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Failed to fetch holdings" });
   }
 });
 
-app.get("/allPositions", verifyToken, async (req, res) => {
+app.get("/api/account", verifyToken, async (req, res) => {
   try {
-    const allPositions = await PositionsModel.find({});
-    res.json(allPositions);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch positions" });
-  }
-});
-
-app.get("/allOrders", verifyToken, async (req, res) => {
-  try {
-    const allOrders = await OrdersModel.find({});
-    res.json(allOrders);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch orders" });
-  }
-});
-
-app.post("/neworder", verifyToken, async (req, res) => {
-  try {
-    const { name, qty, price, mode } = req.body;
-
-    // basic validation
-    if (!name || qty == null || price == null || !mode) {
-      res.status(400).json({ message: "name, qty, price and mode are required" });
-      return;
-    }
-    if (mode !== "BUY" && mode !== "SELL") {
-      res.status(400).json({ message: "mode must be BUY or SELL" });
-      return;
-    }
-    // Number.isFinite also rejects NaN, so non-numeric input can't slip
-    // past the comparisons below (NaN <= 0 is false).
-    const numQty = Number(qty);
-    const numPrice = Number(price);
-    if (!Number.isFinite(numQty) || numQty <= 0) {
-      res.status(400).json({ message: "qty must be a number > 0" });
-      return;
-    }
-    if (!Number.isFinite(numPrice) || numPrice < 0) {
-      res.status(400).json({ message: "price must be a number >= 0" });
-      return;
-    }
-
-    const newOrder = new OrdersModel({
-      name,
-      qty: numQty,
-      price: numPrice,
-      mode,
+    const user = req.user!;
+    const balance = roundUsd(user.balance ?? STARTING_CASH);
+    const holdings = await HoldingsModel.find({ userId: user._id });
+    const holdingsValue = holdings.reduce((sum, h) => {
+      const live = getPrice(h.symbol);
+      return sum + h.qty * (live?.price ?? h.avgCost);
+    }, 0);
+    res.json({
+      username: user.username,
+      email: user.email,
+      balance,
+      portfolioValue: roundUsd(balance + holdingsValue),
+      createdAt: user.createdAt,
     });
-
-    await newOrder.save();
-    res.status(201).json({ message: "order saved", order: newOrder });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Failed to save order" });
+    res.status(500).json({ message: "Failed to fetch account" });
   }
 });
+
+// Health check — also the keep-alive ping target so the free-tier host
+// doesn't sleep (which would pause the matcher and snapshots).
+app.get("/healthz", (_req, res) => {
+  res.json({
+    ok: true,
+    wsConnected: isWsConnected(),
+    pricesFresh: SYMBOLS.some((s) => isFresh(s.symbol)),
+  });
+});
+
+// Start over: wipe holdings and open orders, restore the starting balance.
+app.post("/api/account/reset", verifyToken, async (req, res) => {
+  try {
+    const userId = req.user!._id;
+    await OrdersModel.updateMany(
+      { userId, status: "OPEN" },
+      { $set: { status: "CANCELLED", reason: "Account reset" } }
+    );
+    await HoldingsModel.deleteMany({ userId });
+    await UserModel.updateOne(
+      { _id: userId },
+      { $set: { balance: STARTING_CASH } }
+    );
+    void snapshotUser(userId);
+    res.json({ message: "Account reset", balance: STARTING_CASH });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to reset account" });
+  }
+});
+
+// Idempotent, runs on every boot: brings pre-rework documents up to the
+// current data model (users without a balance, holdings/orders from the
+// old global collections, the retired positions collection).
+const migrate = async (): Promise<void> => {
+  const backfilled = await UserModel.updateMany(
+    { balance: { $exists: false } },
+    { $set: { balance: STARTING_CASH } }
+  );
+  if (backfilled.modifiedCount > 0) {
+    console.log(`migrate: seeded balance for ${backfilled.modifiedCount} user(s)`);
+  }
+  const oldHoldings = await HoldingsModel.deleteMany({ userId: { $exists: false } });
+  const oldOrders = await OrdersModel.deleteMany({ userId: { $exists: false } });
+  if (oldHoldings.deletedCount || oldOrders.deletedCount) {
+    console.log(
+      `migrate: purged ${oldHoldings.deletedCount} legacy holding(s), ${oldOrders.deletedCount} legacy order(s)`
+    );
+  }
+  try {
+    await mongoose.connection.dropCollection("positions");
+    console.log("migrate: dropped legacy positions collection");
+  } catch {
+    // collection already gone — nothing to do
+  }
+};
 
 const start = async (): Promise<void> => {
   try {
@@ -109,6 +166,16 @@ const start = async (): Promise<void> => {
     }
     await mongoose.connect(uri);
     console.log("db connected");
+    await migrate();
+    // Drop curated symbols Gemini no longer trades, then start the shared
+    // price poller. Only when run directly — tests import app without timers.
+    await validateSymbolsAgainstGemini(fetchSymbols);
+    // WebSocket streams live trades into the cache; the REST poller runs
+    // underneath at a relaxed cadence as fallback + 24h-change source.
+    startGeminiWs();
+    startPolling(30_000);
+    startMatcher();
+    startSnapshots();
     app.listen(PORT, () => {
       console.log(`app started on port ${PORT}`);
     });
