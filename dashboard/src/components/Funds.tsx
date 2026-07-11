@@ -94,6 +94,23 @@ const Funds = () => {
         </StatCard>
       </div>
 
+      <div className="row">
+        <StatCard label="Realized P&L" sub="locked in by sells">
+          {account ? (
+            <PnLValue value={account.realizedPnl ?? 0} showArrow />
+          ) : (
+            "—"
+          )}
+        </StatCard>
+        <StatCard label="Unrealized P&L" sub="open positions vs avg cost">
+          {account ? (
+            <PnLValue value={account.unrealizedPnl ?? 0} showArrow />
+          ) : (
+            "—"
+          )}
+        </StatCard>
+      </div>
+
       <div className="panel funds-note">
         <h4>How funds work here</h4>
         <p>

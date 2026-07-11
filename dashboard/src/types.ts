@@ -27,6 +27,7 @@ export interface Order {
   qty: number;
   limitPrice?: number;
   fillPrice?: number;
+  realizedPnl?: number;
   reason?: string;
   createdAt: string;
   filledAt?: string;
@@ -37,6 +38,8 @@ export interface Account {
   email: string;
   balance: number;
   portfolioValue?: number;
+  realizedPnl?: number;
+  unrealizedPnl?: number;
   createdAt?: string;
 }
 

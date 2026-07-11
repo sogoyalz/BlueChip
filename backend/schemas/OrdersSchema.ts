@@ -13,6 +13,7 @@ export interface IOrder {
   qty: number;
   limitPrice?: number; // LIMIT orders only
   fillPrice?: number; // set when status becomes FILLED
+  realizedPnl?: number; // SELL fills only: profit vs weighted-avg cost
   reason?: string; // set when status becomes REJECTED
   createdAt: Date;
   filledAt?: Date;
@@ -36,6 +37,7 @@ export const OrdersSchema = new Schema<IOrder>({
   qty: { type: Number, required: true },
   limitPrice: Number,
   fillPrice: Number,
+  realizedPnl: Number,
   reason: String,
   createdAt: { type: Date, default: Date.now },
   filledAt: Date,

@@ -79,11 +79,17 @@ function validate(input: PlaceOrderInput): ValidatedOrder {
   return { symbol, side, type, qty, limitPrice };
 }
 
+export interface FillResult {
+  /** null = success; otherwise a human-readable rejection reason */
+  reason: string | null;
+  /** SELL fills only: profit locked in vs weighted-average cost */
+  realizedPnl?: number;
+}
+
 /**
  * Apply the portfolio effects of filling `qty` of `symbol` at `price`.
- * Returns null on success or a human-readable rejection reason. Never
- * leaves money half-moved: a BUY whose holding update fails refunds the
- * debit before reporting failure.
+ * Never leaves money half-moved: a BUY whose holding update fails refunds
+ * the debit before reporting failure.
  */
 export async function applyFillEffects(
   userId: Types.ObjectId | string,
@@ -91,14 +97,14 @@ export async function applyFillEffects(
   side: OrderSide,
   qty: number,
   price: number
-): Promise<string | null> {
+): Promise<FillResult> {
   if (side === "BUY") {
     const cost = roundUsd(qty * price);
     const debit = await UserModel.updateOne(
       { _id: userId, balance: { $gte: cost } },
       { $inc: { balance: -cost } }
     );
-    if (debit.modifiedCount === 0) return "Insufficient funds";
+    if (debit.modifiedCount === 0) return { reason: "Insufficient funds" };
 
     try {
       await upsertHolding(userId, symbol, qty, cost, price);
@@ -108,7 +114,7 @@ export async function applyFillEffects(
       if ((err as { code?: number }).code === 11000) {
         try {
           await upsertHolding(userId, symbol, qty, cost, price);
-          return null;
+          return { reason: null };
         } catch (retryErr) {
           console.error("holding upsert retry failed:", retryErr);
         }
@@ -117,24 +123,33 @@ export async function applyFillEffects(
       }
       // Give the money back rather than swallowing it.
       await UserModel.updateOne({ _id: userId }, { $inc: { balance: cost } });
-      return "Order failed — funds were not deducted";
+      return { reason: "Order failed — funds were not deducted" };
     }
-    return null;
+    return { reason: null };
   }
 
-  // SELL: take the quantity first (guarded), then credit the proceeds.
+  // SELL: read the cost basis (avgCost only changes on buys, so this is
+  // race-safe against other sells), take the quantity (guarded), then
+  // credit proceeds and book the realized P&L in one atomic $inc.
+  const holding = await HoldingsModel.findOne({ userId, symbol });
+  const avgCost = holding?.avgCost ?? 0;
+
   const decrement = await HoldingsModel.updateOne(
     { userId, symbol, qty: { $gte: qty - QTY_EPSILON } },
     { $inc: { qty: -qty } }
   );
-  if (decrement.modifiedCount === 0) return "Insufficient quantity";
+  if (decrement.modifiedCount === 0) return { reason: "Insufficient quantity" };
 
   // A sell-everything can leave ~1e-12 behind; drop dust rows.
   await HoldingsModel.deleteMany({ userId, symbol, qty: { $lte: QTY_EPSILON } });
 
   const proceeds = roundUsd(qty * price);
-  await UserModel.updateOne({ _id: userId }, { $inc: { balance: proceeds } });
-  return null;
+  const realizedPnl = roundUsd((price - avgCost) * qty);
+  await UserModel.updateOne(
+    { _id: userId },
+    { $inc: { balance: proceeds, realizedPnl } }
+  );
+  return { reason: null, realizedPnl };
 }
 
 /**
@@ -217,14 +232,15 @@ export async function placeOrder(
       status: "OPEN",
       qty,
     });
-    const reason = await applyFillEffects(userId, symbol, side, qty, price);
-    if (reason) {
+    const fill = await applyFillEffects(userId, symbol, side, qty, price);
+    if (fill.reason) {
       order.status = "REJECTED";
-      order.reason = reason;
+      order.reason = fill.reason;
     } else {
       order.status = "FILLED";
       order.fillPrice = price;
       order.filledAt = new Date();
+      if (fill.realizedPnl !== undefined) order.realizedPnl = fill.realizedPnl;
       // Fire-and-forget: the Summary chart gets a point at every fill.
       void snapshotUser(userId);
     }

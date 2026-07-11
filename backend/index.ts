@@ -21,6 +21,7 @@ import { getPrice, startPolling } from "./services/priceFeed";
 import { startGeminiWs } from "./services/geminiWs";
 import { startMatcher } from "./services/matcher";
 import { snapshotUser, startSnapshots } from "./services/snapshots";
+import { startSseBroadcast } from "./services/sse";
 import { authLimiter, generalLimiter } from "./middlewares/rateLimit";
 import { isWsConnected } from "./services/geminiWs";
 import { SYMBOLS } from "./config/symbols";
@@ -85,15 +86,20 @@ app.get("/api/account", verifyToken, async (req, res) => {
     const user = req.user!;
     const balance = roundUsd(user.balance ?? STARTING_CASH);
     const holdings = await HoldingsModel.find({ userId: user._id });
-    const holdingsValue = holdings.reduce((sum, h) => {
+    let holdingsValue = 0;
+    let costBasis = 0;
+    for (const h of holdings) {
       const live = getPrice(h.symbol);
-      return sum + h.qty * (live?.price ?? h.avgCost);
-    }, 0);
+      holdingsValue += h.qty * (live?.price ?? h.avgCost);
+      costBasis += h.qty * h.avgCost;
+    }
     res.json({
       username: user.username,
       email: user.email,
       balance,
       portfolioValue: roundUsd(balance + holdingsValue),
+      realizedPnl: roundUsd(user.realizedPnl ?? 0),
+      unrealizedPnl: roundUsd(holdingsValue - costBasis),
       createdAt: user.createdAt,
     });
   } catch (err) {
@@ -123,7 +129,7 @@ app.post("/api/account/reset", verifyToken, async (req, res) => {
     await HoldingsModel.deleteMany({ userId });
     await UserModel.updateOne(
       { _id: userId },
-      { $set: { balance: STARTING_CASH } }
+      { $set: { balance: STARTING_CASH, realizedPnl: 0 } }
     );
     void snapshotUser(userId);
     res.json({ message: "Account reset", balance: STARTING_CASH });
@@ -144,6 +150,10 @@ const migrate = async (): Promise<void> => {
   if (backfilled.modifiedCount > 0) {
     console.log(`migrate: seeded balance for ${backfilled.modifiedCount} user(s)`);
   }
+  await UserModel.updateMany(
+    { realizedPnl: { $exists: false } },
+    { $set: { realizedPnl: 0 } }
+  );
   const oldHoldings = await HoldingsModel.deleteMany({ userId: { $exists: false } });
   const oldOrders = await OrdersModel.deleteMany({ userId: { $exists: false } });
   if (oldHoldings.deletedCount || oldOrders.deletedCount) {
@@ -176,6 +186,7 @@ const start = async (): Promise<void> => {
     startPolling(30_000);
     startMatcher();
     startSnapshots();
+    startSseBroadcast();
     app.listen(PORT, () => {
       console.log(`app started on port ${PORT}`);
     });

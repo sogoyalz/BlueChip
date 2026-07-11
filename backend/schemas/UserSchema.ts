@@ -8,6 +8,7 @@ export interface IUser {
   username: string;
   password: string;
   balance: number;
+  realizedPnl: number; // profit locked in by sells, vs weighted-avg cost
   createdAt: Date;
 }
 
@@ -16,6 +17,7 @@ export const UserSchema = new Schema<IUser>({
   username: { type: String, required: true },
   password: { type: String, required: true },
   balance: { type: Number, default: STARTING_CASH },
+  realizedPnl: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
 });
 

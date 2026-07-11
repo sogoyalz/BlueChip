@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 
 import DataTable, { Column } from "./shared/DataTable";
 import EmptyState from "./shared/EmptyState";
+import PnLValue from "./shared/PnLValue";
 import { Order, OrderStatus } from "../types";
 import { API_URL } from "../config";
 
@@ -97,6 +98,16 @@ const Orders = () => {
           : o.type === "LIMIT"
             ? `${fmt(o.limitPrice)} (limit)`
             : "—",
+    },
+    {
+      key: "pnl",
+      label: "Realized P&L",
+      render: (o) =>
+        o.side === "SELL" && o.status === "FILLED" && o.realizedPnl !== undefined ? (
+          <PnLValue value={o.realizedPnl} showArrow />
+        ) : (
+          "—"
+        ),
     },
     {
       key: "status",
