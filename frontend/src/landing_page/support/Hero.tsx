@@ -15,11 +15,14 @@ function Hero() {
           <h1 className="fs-3 mb-4">
             Search for an answer or browse help topics to create a ticket
           </h1>
-          <input placeholder="Eg. how do I activate F&O" className="mb-4" />
+          <input
+            placeholder="E.g. how do I enable options trading"
+            className="mb-4"
+          />
           <div className="chip-row">
             <a href="#createTicket">Track account opening</a>
-            <a href="#createTicket">Track segment activation</a>
-            <a href="#createTicket">Intraday margins</a>
+            <a href="#createTicket">Options approval</a>
+            <a href="#createTicket">Margin requirements</a>
             <a href="#createTicket">Terminal user guide</a>
           </div>
         </div>
@@ -28,11 +31,11 @@ function Hero() {
           <ol>
             <li className="mb-2">
               <a href="#createTicket">
-                Current Takeovers and Delisting - July 2026
+                Current mergers and delistings - July 2026
               </a>
             </li>
             <li>
-              <a href="#createTicket">Latest Intraday leverages - MIS &amp; CO</a>
+              <a href="#createTicket">Latest margin requirements update</a>
             </li>
           </ol>
         </div>

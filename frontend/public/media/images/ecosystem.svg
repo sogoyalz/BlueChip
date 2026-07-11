@@ -16,7 +16,7 @@
     <circle cx="110" cy="80" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
     <text x="110" y="85" fill="#f5f5f5">Stocks</text>
     <circle cx="410" cy="80" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
-    <text x="410" y="85" fill="#f5f5f5">F&amp;O</text>
+    <text x="410" y="85" fill="#f5f5f5">Options</text>
     <circle cx="70" cy="230" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
     <text x="70" y="235" fill="#f5f5f5">IPOs</text>
     <circle cx="450" cy="230" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>

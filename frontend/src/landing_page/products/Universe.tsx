@@ -2,10 +2,10 @@ import React from "react";
 import { Link } from "react-router-dom";
 
 const features = [
-  { title: "Stocks & IPOs", text: "Invest across NSE and BSE with real-time data" },
-  { title: "Derivatives", text: "Futures & options with live margin insights" },
-  { title: "Mutual funds", text: "Direct plans, zero commission, via Vault" },
-  { title: "Bonds & G-sec", text: "Government and corporate debt in one click" },
+  { title: "Stocks & IPOs", text: "Invest across NASDAQ and NYSE with real-time data" },
+  { title: "Options & futures", text: "Trade derivatives with live margin insights" },
+  { title: "Mutual funds", text: "No-transaction-fee funds, via Vault" },
+  { title: "Bonds & Treasuries", text: "Government and corporate debt in one click" },
   { title: "ETFs", text: "Diversify with low-cost index investing" },
   { title: "API access", text: "Automate your strategies with BlueChip API" },
 ];

@@ -22,16 +22,16 @@ function Pricing() {
             <div className="row text-center gy-3">
               <div className="col-sm-6">
                 <div className="panel h-100">
-                  <div className="stat-figure mb-2">₹0</div>
+                  <div className="stat-figure mb-2">$0</div>
                   <p className="mb-0 fine-print">
-                    Free equity delivery and direct mutual funds
+                    Commission-free stock and ETF trades
                   </p>
                 </div>
               </div>
               <div className="col-sm-6">
                 <div className="panel h-100">
-                  <div className="stat-figure mb-2">₹20</div>
-                  <p className="mb-0 fine-print">Intraday and F&amp;O</p>
+                  <div className="stat-figure mb-2">$0.65</div>
+                  <p className="mb-0 fine-print">Per options contract</p>
                 </div>
               </div>
             </div>

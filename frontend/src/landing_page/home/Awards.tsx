@@ -24,16 +24,16 @@ function Awards() {
           <div className="row">
             <div className="col-md-6">
               <ul className="checklist">
-                <li>Future Options</li>
-                <li>Commodity derivatives</li>
-                <li>Currency derivatives</li>
+                <li>Stocks &amp; ETFs</li>
+                <li>Options</li>
+                <li>Futures</li>
               </ul>
             </div>
             <div className="col-md-6">
               <ul className="checklist">
-                <li>Stocks &amp; IPOs</li>
-                <li>Direct Mutual funds</li>
-                <li>Bonds and Government Security</li>
+                <li>Mutual funds</li>
+                <li>Bonds &amp; Treasuries</li>
+                <li>IPOs</li>
               </ul>
             </div>
           </div>

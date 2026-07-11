@@ -1,0 +1,13 @@
+# Netlify config for the landing/auth app (deploy this directory as its own site).
+# CRA envs (REACT_APP_API_URL, REACT_APP_DASHBOARD_URL) are baked at BUILD time —
+# set them in the Netlify UI and redeploy after changing them.
+
+[build]
+  command = "npm run build"
+  publish = "build"
+
+# SPA fallback: let react-router handle every route.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

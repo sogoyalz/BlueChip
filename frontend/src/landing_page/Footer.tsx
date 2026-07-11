@@ -13,7 +13,7 @@ function Footer() {
               className="footer-logo"
             />
             <p className="fine-print mt-3">
-              &copy; 2026, BlueChip Broking Ltd. All rights reserved.
+              &copy; 2026, BlueChip Securities, Inc. All rights reserved.
             </p>
           </div>
           <div className="col-6 col-md-3">
@@ -88,8 +88,8 @@ function Footer() {
           </p>
 
           <p>
-            Investments in securities market are subject to market risks; read
-            all the related documents carefully before investing.
+            All investing involves risk, including the possible loss of
+            principal. Past performance does not guarantee future results.
           </p>
 
           <p>

@@ -28,7 +28,7 @@ function ProductPage() {
       <LeftSection
         imageURL="/media/images/productVault.svg"
         productName="Vault"
-        productDescription="Buy direct mutual funds and build long-term wealth, commission-free, delivered directly to your Demat account. Invest at your own pace from any device."
+        productDescription="Buy no-transaction-fee mutual funds and ETFs and build long-term wealth, commission-free, straight from your brokerage account. Invest at your own pace from any device."
         tryDemo="/signup"
         learnMore="/support"
         googlePlay="/signup"
