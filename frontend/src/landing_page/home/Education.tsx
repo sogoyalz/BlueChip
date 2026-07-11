@@ -16,23 +16,23 @@ function Education() {
         </div>
         <div className="col-md-6 ps-md-5">
           <span className="eyebrow">Education</span>
-          <h2 className="section-title mb-3">
-            Free and open market education
-          </h2>
+          <h2 className="section-title mb-3">Learn by doing, not by losing</h2>
           <p className="section-lede">
-            BlueChip Learn, our free library of stock market lessons, covers
-            everything from the basics to advanced trading — no signup
-            required.
+            Reading about limit orders is one thing — watching your own rest
+            in the book and fill when the market crosses it is another.
+            BlueChip teaches trading the only way that sticks: with live
+            prices, real order types, and honest P&amp;L on every position.
           </p>
-          <Link className="link-arrow mb-3" to="/support">
-            Learn
+          <Link className="link-arrow mb-3" to="/signup">
+            Place your first order
           </Link>
           <p className="section-lede">
-            The BlueChip Community, an active forum of traders and investors,
-            is the place to get all your market related queries answered.
+            Charts, spreads, fills, weighted-average cost — see exactly how
+            each one works because your own portfolio depends on it (and only
+            your pride is on the line).
           </p>
           <Link className="link-arrow" to="/support">
-            Community
+            How it works
           </Link>
         </div>
       </div>

@@ -29,12 +29,14 @@ describe('Home Hero Component', () => {
 
     test("renders the tagline and CTAs", () => {
         render(<Hero />);
-        expect(screen.getByText('Trade with conviction')).toBeInTheDocument();
         expect(
-            screen.getByRole('link', { name: /open a free account/i })
+            screen.getByText('Learn to trade crypto with $100,000 — none of it real.')
         ).toBeInTheDocument();
         expect(
-            screen.getByRole('link', { name: /see pricing/i })
+            screen.getByRole('link', { name: /start trading free/i })
+        ).toBeInTheDocument();
+        expect(
+            screen.getByRole('link', { name: /see how it works/i })
         ).toBeInTheDocument();
     });
 });

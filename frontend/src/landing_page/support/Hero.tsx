@@ -16,13 +16,13 @@ function Hero() {
             Search for an answer or browse help topics to create a ticket
           </h1>
           <input
-            placeholder="E.g. how do I enable options trading"
+            placeholder="E.g. how do limit orders fill?"
             className="mb-4"
           />
           <div className="chip-row">
-            <a href="#createTicket">Track account opening</a>
-            <a href="#createTicket">Options approval</a>
-            <a href="#createTicket">Margin requirements</a>
+            <a href="#createTicket">Reset my account</a>
+            <a href="#createTicket">Where prices come from</a>
+            <a href="#createTicket">Limit orders</a>
             <a href="#createTicket">Terminal user guide</a>
           </div>
         </div>
@@ -31,11 +31,13 @@ function Hero() {
           <ol>
             <li className="mb-2">
               <a href="#createTicket">
-                Current mergers and delistings - July 2026
+                How limit orders rest and fill — price-or-better explained
               </a>
             </li>
             <li>
-              <a href="#createTicket">Latest margin requirements update</a>
+              <a href="#createTicket">
+                How the leaderboard ranks traders by portfolio value
+              </a>
             </li>
           </ol>
         </div>

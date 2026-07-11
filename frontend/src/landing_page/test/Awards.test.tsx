@@ -6,12 +6,15 @@ import Awards from "../home/Awards";
 describe('Awards Component', () => {
     test("renders the heading", () => {
         render(<Awards />);
-        expect(screen.getByText('Everything you need to trade')).toBeInTheDocument();
+        expect(
+            screen.getByText('Everything a real exchange has — minus the risk')
+        ).toBeInTheDocument();
     });
 
-    test("renders the product list items", () => {
+    test("renders the feature list items", () => {
         render(<Awards />);
-        expect(screen.getByText('Stocks & ETFs')).toBeInTheDocument();
-        expect(screen.getByText('Mutual funds')).toBeInTheDocument();
+        expect(screen.getByText('Live Gemini prices')).toBeInTheDocument();
+        expect(screen.getByText('Market & limit orders')).toBeInTheDocument();
+        expect(screen.getByText('$100k practice balance')).toBeInTheDocument();
     });
 });

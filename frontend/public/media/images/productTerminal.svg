@@ -10,6 +10,6 @@
   </g>
   <path d="M44 250 L96 230 L148 242 L200 200 L252 214 L304 170 L356 186 L408 130 L436 140" fill="none" stroke="#e50914" stroke-width="2.5" stroke-linejoin="round"/>
   <circle cx="408" cy="130" r="4.5" fill="#e50914"/>
-  <text x="44" y="296" font-family="Inter, sans-serif" font-size="12" fill="#00c853">▲ 1,245.60</text>
+  <text x="44" y="296" font-family="Inter, sans-serif" font-size="12" fill="#00c853">▲ 64,118.31</text>
   <text x="436" y="296" font-family="Inter, sans-serif" font-size="12" fill="#a0a0a0" text-anchor="end">Live market depth</text>
 </svg>

@@ -14,17 +14,17 @@
   <rect x="272" y="180" width="10" height="50" rx="2" fill="#ffffff"/>
   <g font-family="Inter, sans-serif" font-size="13" text-anchor="middle">
     <circle cx="110" cy="80" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
-    <text x="110" y="85" fill="#f5f5f5">Stocks</text>
+    <text x="110" y="85" fill="#f5f5f5">Bitcoin</text>
     <circle cx="410" cy="80" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
-    <text x="410" y="85" fill="#f5f5f5">Options</text>
+    <text x="410" y="85" fill="#f5f5f5">Ethereum</text>
     <circle cx="70" cy="230" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
-    <text x="70" y="235" fill="#f5f5f5">IPOs</text>
+    <text x="70" y="235" fill="#f5f5f5">Solana</text>
     <circle cx="450" cy="230" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
-    <text x="450" y="235" fill="#f5f5f5">Bonds</text>
+    <text x="450" y="235" fill="#f5f5f5">XRP</text>
     <circle cx="140" cy="350" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
-    <text x="140" y="346" fill="#f5f5f5">Mutual</text>
-    <text x="140" y="362" fill="#f5f5f5">funds</text>
+    <text x="140" y="346" fill="#f5f5f5">Doge</text>
+    <text x="140" y="362" fill="#f5f5f5">coin</text>
     <circle cx="380" cy="350" r="42" fill="#1a1a1a" stroke="#2a2a2a"/>
-    <text x="380" y="355" fill="#f5f5f5">ETFs</text>
+    <text x="380" y="355" fill="#f5f5f5">Litecoin</text>
   </g>
 </svg>

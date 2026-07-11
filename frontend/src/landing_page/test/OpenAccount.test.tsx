@@ -20,9 +20,12 @@ jest.mock(
 import OpenAccount from "../OpenAccount";
 
 describe('OpenAccount Component', () => {
-    test("renders the heading", () => {
+    test("renders the heading and practice-funds pitch", () => {
         render(<OpenAccount />);
         expect(screen.getByText('Open a BlueChip account')).toBeInTheDocument();
+        expect(
+            screen.getByText(/\$100,000 in practice funds/i)
+        ).toBeInTheDocument();
     });
 
     test("renders the sign up link", () => {
