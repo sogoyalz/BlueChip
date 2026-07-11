@@ -17,8 +17,15 @@ declare global {
 
 // Used by the frontend's "am I still logged in?" check (POST /).
 // Responds with a status flag rather than calling next().
+// Accepts the token from the cookie, the request body, or a Bearer
+// header — in production the dashboard runs on a different site, so
+// the backend-domain cookie never arrives cross-origin.
 export const userVerification = (req: Request, res: Response): void => {
-  const token = req.cookies.token; // read the cookie
+  const bearer = req.headers.authorization;
+  const token =
+    req.cookies.token ||
+    (typeof req.body?.token === "string" ? req.body.token : null) ||
+    (bearer && bearer.startsWith("Bearer ") ? bearer.slice(7) : null);
 
   if (!token) {
     res.json({ status: false }); // no token = not logged in
