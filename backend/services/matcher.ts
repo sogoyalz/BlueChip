@@ -44,22 +44,28 @@ export async function tick(): Promise<void> {
       // portfolio mutation below, the order shows FILLED without effects.
       // Acceptable for paper trading; a real exchange would journal fills
       // and replay on startup.
-      const reason = await applyFillEffects(
+      const fill = await applyFillEffects(
         order.userId,
         order.symbol,
         order.side,
         order.qty,
         price
       );
-      if (reason) {
+      if (fill.reason) {
         await OrdersModel.updateOne(
           { _id: order._id },
           {
-            $set: { status: "REJECTED", reason },
+            $set: { status: "REJECTED", reason: fill.reason },
             $unset: { fillPrice: "", filledAt: "" },
           }
         );
       } else {
+        if (fill.realizedPnl !== undefined) {
+          await OrdersModel.updateOne(
+            { _id: order._id },
+            { $set: { realizedPnl: fill.realizedPnl } }
+          );
+        }
         void snapshotUser(order.userId);
       }
     } catch (err) {

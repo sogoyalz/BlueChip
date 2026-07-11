@@ -83,6 +83,7 @@ beforeEach(() => {
   // Happy-path portfolio effects
   mockedUser.updateOne.mockResolvedValue({ modifiedCount: 1 });
   mockedHoldings.updateOne.mockResolvedValue({ modifiedCount: 1 });
+  mockedHoldings.findOne.mockResolvedValue({ qty: 1, avgCost: 45000 });
   mockedHoldings.findOneAndUpdate.mockResolvedValue({});
   mockedHoldings.deleteMany.mockResolvedValue({ deletedCount: 0 });
 });
@@ -183,7 +184,7 @@ describe("POST /api/orders — market fills", () => {
     );
   });
 
-  test("a SELL decrements the holding (guarded), cleans dust, credits proceeds", async () => {
+  test("a SELL decrements the holding (guarded), cleans dust, credits proceeds + realized P&L", async () => {
     const res = await authedPost().send({
       symbol: "BTCUSD",
       side: "SELL",
@@ -198,9 +199,27 @@ describe("POST /api/orders — market fills", () => {
     expect(filter.qty.$gte).toBeCloseTo(0.2, 6);
     expect(update).toEqual({ $inc: { qty: -0.2 } });
     expect(mockedHoldings.deleteMany).toHaveBeenCalled();
+    // proceeds 0.2 * 50000 = 10000; realized (50000 - 45000) * 0.2 = 1000
     expect(mockedUser.updateOne).toHaveBeenCalledWith(
       { _id: "user-1" },
-      { $inc: { balance: 10000 } }
+      { $inc: { balance: 10000, realizedPnl: 1000 } }
+    );
+    expect(res.body.order.realizedPnl).toBe(1000);
+  });
+
+  test("a losing SELL books a negative realized P&L", async () => {
+    mockedHoldings.findOne.mockResolvedValue({ qty: 1, avgCost: 60000 });
+    const res = await authedPost().send({
+      symbol: "BTCUSD",
+      side: "SELL",
+      type: "MARKET",
+      qty: 0.1,
+    });
+    // (50000 - 60000) * 0.1 = -1000
+    expect(res.body.order.realizedPnl).toBe(-1000);
+    expect(mockedUser.updateOne).toHaveBeenCalledWith(
+      { _id: "user-1" },
+      { $inc: { balance: 5000, realizedPnl: -1000 } }
     );
   });
 

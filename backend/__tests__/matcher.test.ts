@@ -6,6 +6,7 @@ jest.mock("../model/UserModel", () => ({
 }));
 jest.mock("../model/HoldingsModel", () => ({
   HoldingsModel: {
+    findOne: jest.fn(),
     findOneAndUpdate: jest.fn(),
     updateOne: jest.fn(),
     deleteMany: jest.fn(),
@@ -57,6 +58,7 @@ beforeEach(() => {
   mockedIsFresh.mockReturnValue(true);
   mockedUser.updateOne.mockResolvedValue({ modifiedCount: 1 });
   mockedHoldings.updateOne.mockResolvedValue({ modifiedCount: 1 });
+  mockedHoldings.findOne.mockResolvedValue({ qty: 1, avgCost: 50000 });
   mockedHoldings.findOneAndUpdate.mockResolvedValue({});
   mockedHoldings.deleteMany.mockResolvedValue({ deletedCount: 0 });
   mockedOrders.findOneAndUpdate.mockResolvedValue({ _id: "o1" }); // claim wins
@@ -98,15 +100,20 @@ describe("tick", () => {
     expect(mockedUser.updateOne).not.toHaveBeenCalled();
   });
 
-  test("fills a crossed SELL limit", async () => {
+  test("fills a crossed SELL limit and books realized P&L", async () => {
     findReturns([openLimit({ side: "SELL", limitPrice: 55000 })]);
     mockedGetPrice.mockReturnValue({ price: 56000 });
     await tick();
     expect(mockedOrders.findOneAndUpdate).toHaveBeenCalled();
-    // Credit 0.1 * 56000 = 5600
+    // Credit 0.1 * 56000 = 5600; realized (56000 - 50000) * 0.1 = 600
     expect(mockedUser.updateOne).toHaveBeenCalledWith(
       { _id: "user-1" },
-      { $inc: { balance: 5600 } }
+      { $inc: { balance: 5600, realizedPnl: 600 } }
+    );
+    // realized P&L persisted onto the order after the fill
+    expect(mockedOrders.updateOne).toHaveBeenCalledWith(
+      { _id: "o1" },
+      { $set: { realizedPnl: 600 } }
     );
   });
 
