@@ -13,7 +13,7 @@ function Footer() {
               className="footer-logo"
             />
             <p className="fine-print mt-3">
-              &copy; 2026, BlueChip Securities, Inc. All rights reserved.
+              &copy; 2026, BlueChip. All rights reserved.
             </p>
           </div>
           <div className="col-6 col-md-3">
@@ -82,25 +82,25 @@ function Footer() {
         </div>
         <div className="fine-print mt-5">
           <p>
-            BlueChip is a demonstration project and not a registered stock
-            broker. Nothing on this site is investment advice, and no real
-            securities can be bought or sold here.
+            BlueChip is a paper-trading simulator: all balances are
+            simulated, and no real money can be deposited, withdrawn, or put
+            at risk here. Market data is sourced from Gemini's public API.
           </p>
 
           <p>
-            All investing involves risk, including the possible loss of
-            principal. Past performance does not guarantee future results.
+            This is an educational portfolio project — not a broker, not an
+            exchange, and not affiliated with or endorsed by Gemini. Nothing
+            on this site is investment advice.
           </p>
 
           <p>
-            As a business we don't give stock tips, and have not authorized
-            anyone to trade on behalf of others. If you find anyone claiming to
-            be part of BlueChip and offering such services, please create a
-            ticket on our support portal.
+            Practicing with simulated funds is a way to learn how markets
+            work; real trading involves real risk, including the possible
+            loss of principal.
           </p>
         </div>
         <div className="border-top pt-3 mt-4 pb-2 d-flex flex-wrap justify-content-between fine-print">
-          <span>BlueChip — Trade with conviction</span>
+          <span>BlueChip — Learn to trade, risk nothing</span>
           <span>
             <Link to="/support">Support</Link>
             <span className="mx-2">·</span>

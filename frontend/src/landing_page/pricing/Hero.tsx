@@ -5,9 +5,12 @@ function Hero() {
     <div className="container">
       <div className="section border-bottom text-center">
         <span className="eyebrow">Pricing</span>
-        <h1 className="section-title mb-3">Simple, transparent pricing</h1>
+        <h1 className="section-title mb-3">
+          Everything is free, because nothing is real
+        </h1>
         <p className="section-lede mx-auto">
-          $0 commissions on stocks and ETFs, and flat $0.65 options contracts
+          No commissions, no subscriptions, no deposits — every account
+          trades a $100,000 simulated balance at live market prices
         </p>
       </div>
       <div className="section">
@@ -16,13 +19,14 @@ function Hero() {
             <div className="panel h-100">
               <img
                 src="/media/images/pricingZero.svg"
-                alt="Zero brokerage"
+                alt="Free forever"
                 className="mb-3"
               />
-              <h2 className="fs-4 mb-3">$0 stock &amp; ETF trades</h2>
+              <h2 className="fs-4 mb-3">$0 to trade</h2>
               <p className="text-muted mb-0">
-                All online US-listed stock and ETF trades (NASDAQ, NYSE) are
-                absolutely free — $0 commissions.
+                Every order — market or limit, any size, any hour — is
+                completely free. There is nothing to deposit and nothing to
+                pay, ever.
               </p>
             </div>
           </div>
@@ -30,13 +34,14 @@ function Hero() {
             <div className="panel h-100">
               <img
                 src="/media/images/pricingFlat.svg"
-                alt="Flat per-contract options pricing"
+                alt="Real market data"
                 className="mb-3"
               />
-              <h2 className="fs-4 mb-3">Options trading</h2>
+              <h2 className="fs-4 mb-3">What IS real</h2>
               <p className="text-muted mb-0">
-                Flat $0.65 per contract per executed options order, with no
-                base commission and no exercise or assignment fees.
+                Live Gemini market data, real order mechanics, real
+                volatility, and honest P&amp;L. The market you practice
+                against is the actual market.
               </p>
             </div>
           </div>
@@ -44,13 +49,14 @@ function Hero() {
             <div className="panel h-100">
               <img
                 src="/media/images/pricingZero.svg"
-                alt="Zero commission"
+                alt="Simulated funds"
                 className="mb-3"
               />
-              <h2 className="fs-4 mb-3">No-fee mutual funds</h2>
+              <h2 className="fs-4 mb-3">What is simulated</h2>
               <p className="text-muted mb-0">
-                Thousands of no-transaction-fee mutual funds — $0 commissions
-                &amp; account maintenance fees.
+                Your money. Every account starts with $100,000 of practice
+                funds, and you can reset back to that any time from the
+                dashboard.
               </p>
             </div>
           </div>

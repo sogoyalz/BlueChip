@@ -8,8 +8,8 @@ function OpenAccount() {
         <span className="eyebrow">Get started</span>
         <h2 className="section-title mb-3">Open a BlueChip account</h2>
         <p className="section-lede mx-auto mb-4">
-          Modern platforms and apps, $0 stock and ETF trades, and flat $0.65
-          options contracts.
+          Sign up in seconds, get $100,000 in practice funds, and trade
+          crypto at live Gemini prices.
         </p>
         <Link className="btn btn-primary btn-lg" to="/signup">
           Sign up for free

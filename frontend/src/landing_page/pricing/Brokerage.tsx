@@ -11,35 +11,36 @@ function Brokerage() {
               <h3 className="fs-5 mb-4">Good to know</h3>
               <ul className="checklist fine-print mb-0">
                 <li>
-                  Regulatory fees (SEC and FINRA trading activity fees) apply
-                  on sell orders and are always shown before you place an
-                  order.
+                  Fills execute at the live Gemini market price. Limit orders
+                  fill at your price or better — never worse.
                 </li>
                 <li>
-                  Digital trade confirmations and statements will be sent via
-                  e-mail, free of charge.
+                  Orders are rejected (never partially honored) if your
+                  simulated balance or holdings can't cover them, exactly
+                  like a real exchange would.
                 </li>
                 <li>
-                  Paper copies of trade confirmations, if required, are
-                  charged $2 per statement. Postage charges apply.
+                  Market data is briefly delayed-safe: if the live feed goes
+                  stale, order execution pauses rather than filling on dead
+                  prices.
                 </li>
                 <li>
-                  ACH deposits and withdrawals are free; a nominal fee applies
-                  to wire transfers.
+                  Crypto markets run 24/7 — there are no market hours,
+                  weekends, or holidays.
                 </li>
                 <li>
-                  There are no hidden platform fees, subscription tiers, or
-                  minimum balance requirements — ever.
+                  There are no hidden fees, subscription tiers, or minimum
+                  balances — nothing on BlueChip costs real money, ever.
                 </li>
               </ul>
             </div>
           </div>
           <div className="col-md-4">
             <div className="panel h-100">
-              <h3 className="fs-5 mb-3">List of charges</h3>
+              <h3 className="fs-5 mb-3">Questions?</h3>
               <p className="text-muted">
-                A full breakdown of every charge that can apply to your
-                account, with zero fine print.
+                How fills work, where prices come from, how the leaderboard
+                is ranked — the support portal covers it all.
               </p>
               <Link className="link-arrow" to="/support">
                 Ask us anything

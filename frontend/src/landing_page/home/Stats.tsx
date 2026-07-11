@@ -7,35 +7,37 @@ function Stats() {
       <div className="row align-items-center gy-4">
         <div className="col-md-6 pe-md-5">
           <span className="eyebrow">Why BlueChip</span>
-          <h2 className="section-title mb-4">Trust with confidence</h2>
+          <h2 className="section-title mb-4">Learn without losing</h2>
           <div className="row gy-4">
             <div className="col-sm-6">
-              <h3 className="fs-6 mb-2">Customer-first always</h3>
+              <h3 className="fs-6 mb-2">Real market, fake money</h3>
               <p className="text-muted mb-0">
-                Every decision starts with a simple question: is this good for
-                the people who trust us with their money? No dark patterns, no
-                fine print surprises.
+                Prices stream live from the Gemini exchange, so every fill,
+                spike, and dip is the real market — but your balance is
+                simulated, so mistakes cost nothing.
               </p>
             </div>
             <div className="col-sm-6">
               <h3 className="fs-6 mb-2">No spam or gimmicks</h3>
               <p className="text-muted mb-0">
                 No gimmicks, spam, "gamification", or annoying push
-                notifications. High quality apps that you use at your pace.
+                notifications. A clean terminal you use at your own pace.
               </p>
             </div>
             <div className="col-sm-6">
               <h3 className="fs-6 mb-2">The BlueChip universe</h3>
               <p className="text-muted mb-0">
-                Not just an app, but a whole ecosystem. Stocks, options, ETFs,
-                bonds, and IPOs — one account, every market.
+                Eight major cryptocurrencies, one practice account, live
+                market data — Bitcoin, Ethereum, Solana, and more in one
+                place.
               </p>
             </div>
             <div className="col-sm-6">
-              <h3 className="fs-6 mb-2">Do better with money</h3>
+              <h3 className="fs-6 mb-2">Real order mechanics</h3>
               <p className="text-muted mb-0">
-                With built-in nudges and risk guardrails, we actively help you
-                do better with your money.
+                Market and limit orders behave exactly like on a real
+                exchange — resting orders fill when the market crosses your
+                price, at your price or better.
               </p>
             </div>
           </div>
@@ -50,10 +52,10 @@ function Stats() {
           </div>
           <div className="d-flex justify-content-center gap-4 flex-wrap">
             <Link className="link-arrow" to="/product">
-              Explore our products
+              Explore the platform
             </Link>
             <Link className="link-arrow" to="/signup">
-              Try Terminal
+              Open the dashboard
             </Link>
           </div>
         </div>

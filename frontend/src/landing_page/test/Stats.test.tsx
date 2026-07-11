@@ -22,12 +22,12 @@ import Stats from "../home/Stats";
 describe('Stats Component', () => {
     test("renders the section heading", () => {
         render(<Stats />);
-        expect(screen.getByText('Trust with confidence')).toBeInTheDocument();
+        expect(screen.getByText('Learn without losing')).toBeInTheDocument();
     });
 
     test("renders the call-to-action links", () => {
         render(<Stats />);
-        expect(screen.getByText(/Explore our products/i)).toBeInTheDocument();
-        expect(screen.getByText(/Try Terminal/i)).toBeInTheDocument();
+        expect(screen.getByText(/Explore the platform/i)).toBeInTheDocument();
+        expect(screen.getByText(/Open the dashboard/i)).toBeInTheDocument();
     });
 });
