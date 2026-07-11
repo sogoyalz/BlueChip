@@ -4,6 +4,8 @@
 import { Router } from "express";
 import { SYMBOLS, isSupported } from "../config/symbols";
 import { getAllPrices } from "../services/priceFeed";
+import { getDepth } from "../services/orderBook";
+import { addClient, removeClient } from "../services/sse";
 import {
   CANDLE_TIMEFRAMES,
   Candle,
@@ -19,6 +21,33 @@ router.get("/api/symbols", (_req, res) => {
 
 router.get("/api/prices", (_req, res) => {
   res.json({ prices: getAllPrices(), updatedAt: Date.now() });
+});
+
+// Live price stream (Server-Sent Events). The dashboard prefers this and
+// falls back to polling /api/prices if the stream can't connect.
+router.get("/api/stream", (req, res) => {
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no", // don't let reverse proxies buffer the stream
+  });
+  res.flushHeaders();
+  res.write("retry: 5000\n\n"); // EventSource reconnect hint
+  addClient(res);
+  req.on("close", () => removeClient(res));
+});
+
+// Top of the live order book, maintained from Gemini's l2 WebSocket feed.
+// Empty sides simply mean the WS hasn't (re)connected yet — the dashboard
+// hides the panel rather than erroring.
+router.get("/api/book/:symbol", (req, res) => {
+  const symbol = String(req.params.symbol).toUpperCase();
+  if (!isSupported(symbol)) {
+    res.status(400).json({ message: "Unknown or unsupported symbol" });
+    return;
+  }
+  res.json({ symbol, ...getDepth(symbol, 10) });
 });
 
 // Candle cache: short timeframes change often, long ones barely move —

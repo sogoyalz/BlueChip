@@ -44,6 +44,27 @@ describe("GET /api/prices", () => {
   });
 });
 
+describe("GET /api/book/:symbol", () => {
+  test("rejects an unsupported symbol with 400", async () => {
+    const res = await request(app).get("/api/book/AAPL");
+    expect(res.status).toBe(400);
+  });
+
+  test("serves the top of the live book", async () => {
+    const { applyChanges, clearBooks } = jest.requireActual("../services/orderBook");
+    clearBooks();
+    applyChanges("BTCUSD", [
+      ["buy", "64000", "0.5"],
+      ["sell", "64010", "0.7"],
+    ]);
+    const res = await request(app).get("/api/book/BTCUSD");
+    expect(res.status).toBe(200);
+    expect(res.body.symbol).toBe("BTCUSD");
+    expect(res.body.bids).toEqual([[64000, 0.5]]);
+    expect(res.body.asks).toEqual([[64010, 0.7]]);
+  });
+});
+
 describe("GET /api/candles/:symbol", () => {
   const geminiCandles = [
     [3000, 11, 12, 10, 11.5, 100], // newest first, as Gemini sends

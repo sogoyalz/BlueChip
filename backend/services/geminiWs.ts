@@ -14,6 +14,7 @@
 import WebSocket from "ws";
 import { SYMBOLS } from "../config/symbols";
 import { setPrice } from "./priceFeed";
+import { applyChanges, resetBook } from "./orderBook";
 
 const WS_URL = process.env.GEMINI_WS_URL || "wss://api.gemini.com/v2/marketdata";
 
@@ -63,13 +64,25 @@ export function handleWsMessage(raw: string): void {
     return;
   }
 
-  // l2_updates carries a trades array on the initial snapshot.
-  if (msg.type === "l2_updates" && Array.isArray(msg.trades)) {
+  if (msg.type === "l2_updates") {
     const symbol = String(msg.symbol || "").toUpperCase();
-    const latest = (msg.trades as Array<{ price?: unknown }>)[0];
-    const price = Number(latest?.price);
-    if (symbol && Number.isFinite(price) && price > 0) {
-      setPrice(symbol, { price, source: "ws" });
+    if (!symbol) return;
+
+    // The initial l2_updates after (re)subscribing is a full snapshot and
+    // carries a trades array — reset the book so stale levels from before
+    // a reconnect can't linger, and seed the price from the latest trade.
+    const isSnapshot = Array.isArray(msg.trades);
+    if (isSnapshot) {
+      resetBook(symbol);
+      const latest = (msg.trades as Array<{ price?: unknown }>)[0];
+      const price = Number(latest?.price);
+      if (Number.isFinite(price) && price > 0) {
+        setPrice(symbol, { price, source: "ws" });
+      }
+    }
+
+    if (Array.isArray(msg.changes)) {
+      applyChanges(symbol, msg.changes as Array<[string, string, string]>);
     }
   }
 }
