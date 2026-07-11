@@ -1,6 +1,8 @@
 import React, { useState, useContext } from "react";
+import { useNavigate } from "react-router-dom";
 
 import GeneralContext from "./GeneralContext";
+import { usePrices } from "./PricesContext";
 
 import { Tooltip, Grow } from "@mui/material";
 
@@ -8,14 +10,11 @@ import {
   BarChartOutlined,
   KeyboardArrowDown,
   KeyboardArrowUp,
-  MoreHoriz,
 } from "@mui/icons-material";
 
-import { watchlist } from "../data/data";
-import { WatchlistStock } from "../types";
+import { SymbolInfo, TickerPrice } from "../types";
 import { DoughnutChart } from "./DoughnoutChart";
-
-const labels = watchlist.map((subArray) => subArray["name"]);
+import Sparkline from "./shared/Sparkline";
 
 // Brand ramp: accent reds first, then warm/neutral steps that stay legible on
 // the dark surface; entries beyond the eight slots fold to a muted gray.
@@ -31,16 +30,37 @@ const CATEGORICAL = [
 ];
 const sliceColor = (i: number) => (i < CATEGORICAL.length ? CATEGORICAL[i] : "#4a4a4a");
 
+const fmtPrice = (n: number) =>
+  n >= 1000
+    ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+
 const WatchList = () => {
+  const { prices, symbols } = usePrices();
+  const [query, setQuery] = useState("");
+
+  const q = query.trim().toUpperCase();
+  const visible = symbols.filter(
+    (s) =>
+      !q ||
+      s.symbol.includes(q) ||
+      s.base.includes(q) ||
+      s.name.toUpperCase().includes(q)
+  );
+
+  // Doughnut compares each asset's 24h movement — raw prices would let BTC
+  // dwarf every other slice.
+  const movers = visible.filter((s) => prices[s.symbol]);
   const data = {
-    labels,
+    labels: movers.map((s) => s.base),
     datasets: [
       {
-        label: "Price",
-        data: watchlist.map((stock) => stock.price),
-        backgroundColor: watchlist.map((_, i) => sliceColor(i)),
-        // 2px surface-colored gap between slices
-        borderColor: "var(--surface)",
+        label: "24h move (%)",
+        data: movers.map((s) => Math.abs(prices[s.symbol]?.changePct24h ?? 0)),
+        backgroundColor: movers.map((_, i) => sliceColor(i)),
+        // 2px surface-colored gap between slices (canvas can't resolve CSS
+        // vars, so this mirrors --surface from index.css)
+        borderColor: "#131316",
         borderWidth: 2,
       },
     ],
@@ -53,16 +73,20 @@ const WatchList = () => {
           type="text"
           name="search"
           id="search"
-          placeholder="Search eg:infy, bse, nifty fut weekly, gold mcx"
+          placeholder="Search e.g. BTC, ETH, SOL"
           className="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
         />
-        <span className="counts"> {watchlist.length} / 50</span>
+        <span className="counts">
+          {visible.length} / {symbols.length}
+        </span>
       </div>
 
       <ul className="list">
-        {watchlist.map((stock, index) => {
-          return <WatchListItem stock={stock} key={index} />;
-        })}
+        {visible.map((s) => (
+          <WatchListItem info={s} tick={prices[s.symbol]} key={s.symbol} />
+        ))}
       </ul>
 
       <div className="watchlist-chart">
@@ -74,48 +98,47 @@ const WatchList = () => {
 
 export default WatchList;
 
-const WatchListItem = ({ stock }: { stock: WatchlistStock }) => {
+const WatchListItem = ({
+  info,
+  tick,
+}: {
+  info: SymbolInfo;
+  tick?: TickerPrice;
+}) => {
   const [showWatchlistActions, setShowWatchlistActions] = useState(false);
 
-  const handleMouseEnter = () => {
-    setShowWatchlistActions(true);
-  };
-
-  const handleMouseLeave = () => {
-    setShowWatchlistActions(false);
-  };
+  const isDown = (tick?.changePct24h ?? 0) < 0;
+  const pct = tick ? `${tick.changePct24h >= 0 ? "+" : ""}${tick.changePct24h.toFixed(2)}%` : "—";
 
   return (
-    <li onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+    <li
+      onMouseEnter={() => setShowWatchlistActions(true)}
+      onMouseLeave={() => setShowWatchlistActions(false)}
+    >
       <div className="item">
-        <p className={stock.isDown ? "down" : "up"}>{stock.name}</p>
+        <div className="item-symbol">
+          <div className="symbol-badge">{info.base.slice(0, 3)}</div>
+          <p className="symbol-name">{info.base}</p>
+        </div>
         <div className="item-info">
-          <span className={`percent ${stock.isDown ? "down" : "up"}`}>
-            {stock.percent}
-          </span>
-          {stock.isDown ? (
+          <Sparkline seed={info.symbol} trend={isDown ? "down" : "up"} />
+          <span className={`percent ${isDown ? "down" : "up"}`}>{pct}</span>
+          {isDown ? (
             <KeyboardArrowDown className="down" />
           ) : (
             <KeyboardArrowUp className="up" />
           )}
-          <span className="price">{stock.price}</span>
+          <span className="price">{tick ? fmtPrice(tick.price) : "…"}</span>
         </div>
       </div>
-      {showWatchlistActions && <WatchListActions uid={stock.name} />}
+      {showWatchlistActions && <WatchListActions symbol={info.symbol} />}
     </li>
   );
 };
 
-const WatchListActions = ({ uid }: { uid: string }) => {
+const WatchListActions = ({ symbol }: { symbol: string }) => {
   const generalContext = useContext(GeneralContext);
-
-  const handleBuyClick = () => {
-    generalContext.openTradeWindow(uid, "BUY");
-  };
-
-  const handleSellClick = () => {
-    generalContext.openTradeWindow(uid, "SELL");
-  };
+  const navigate = useNavigate();
 
   return (
     <span className="actions">
@@ -126,7 +149,10 @@ const WatchListActions = ({ uid }: { uid: string }) => {
           arrow
           slots={{ transition: Grow }}
         >
-          <button className="buy" onClick={handleBuyClick}>
+          <button
+            className="buy"
+            onClick={() => generalContext.openTradeWindow(symbol, "BUY")}
+          >
             Buy
           </button>
         </Tooltip>
@@ -136,23 +162,21 @@ const WatchListActions = ({ uid }: { uid: string }) => {
           arrow
           slots={{ transition: Grow }}
         >
-          <button className="sell" onClick={handleSellClick}>
+          <button
+            className="sell"
+            onClick={() => generalContext.openTradeWindow(symbol, "SELL")}
+          >
             Sell
           </button>
         </Tooltip>
         <Tooltip
-          title="Analytics (A)"
+          title="Chart (A)"
           placement="top"
           arrow
           slots={{ transition: Grow }}
         >
-          <button className="action">
+          <button className="action" onClick={() => navigate(`/market/${symbol}`)}>
             <BarChartOutlined className="icon" />
-          </button>
-        </Tooltip>
-        <Tooltip title="More" placement="top" arrow slots={{ transition: Grow }}>
-          <button className="action">
-            <MoreHoriz className="icon" />
           </button>
         </Tooltip>
       </span>

@@ -2,15 +2,15 @@
    BlueChip dashboard — design tokens
    ============================================================ */
 :root {
-  --bg: #0f0f0f; /* page plane */
-  --surface: #1a1a1a; /* cards / panels */
-  --surface-hover: #242424; /* hover / elevated */
-  --border: #2a2a2a; /* hairline separators */
-  --border-strong: #404040; /* stronger borders */
+  --bg: #0a0a0c; /* page plane */
+  --surface: #131316; /* cards / panels */
+  --surface-hover: #1c1c21; /* hover / elevated */
+  --border: #222228; /* hairline separators */
+  --border-strong: #3a3a42; /* stronger borders */
 
-  --ink: #f5f5f5; /* primary text */
-  --ink-2: #a0a0a0; /* secondary text */
-  --ink-3: #666666; /* muted labels */
+  --ink: #f0f0f2; /* primary text */
+  --ink-2: #a0a0a8; /* secondary text */
+  --ink-3: #6c6c74; /* muted labels */
 
   --accent: #e50914; /* primary accent */
   --accent-hover: #ff1f2e;
@@ -22,9 +22,9 @@
   --loss-soft: rgba(255, 82, 82, 0.1);
   --gain-soft: rgba(0, 200, 83, 0.1);
 
-  --radius: 8px;
-  --radius-sm: 6px;
-  --radius-lg: 12px; /* modals */
+  --radius: 14px;
+  --radius-sm: 8px;
+  --radius-lg: 18px; /* modals, hero cards */
   /* No heavy shadows — separate surfaces with 1px borders */
   --shadow-sm: none;
   --shadow-md: none;
@@ -41,8 +41,10 @@
 
   --focus-ring: 2px solid rgba(229, 9, 20, 0.4);
 
-  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+  --font: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
     "Helvetica Neue", sans-serif;
+  /* all numerals sit in the mono face so columns and tickers read terminal-crisp */
+  --mono: "JetBrains Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
 }
 
 * {
@@ -85,10 +87,21 @@ input:focus-visible {
 .percent,
 .price,
 .col h5,
-.data h3,
-.data .second span,
 .table .data p:last-child {
   font-variant-numeric: tabular-nums;
+}
+
+/* Numeric surfaces get the mono face (instrument names stay in the UI face). */
+.order-table td:not(:first-child),
+.index-points,
+.percent,
+.price,
+.col h5,
+.chart-value,
+.col-delta .pnl,
+.chart-delta .pnl,
+.table .data p:last-child {
+  font-family: var(--mono);
 }
 
 /* ============================================================
@@ -199,16 +212,59 @@ input:focus-visible {
 /* ============================================================
    Top bar (indices + menu)
    ============================================================ */
+/* Always-visible simulated-money disclaimer */
+.paper-banner {
+  width: 100%;
+  padding: 5px 16px;
+  text-align: center;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
 .topbar-container {
   width: 100%;
   height: 58px;
   display: flex;
   align-items: stretch;
-  background: var(--surface);
+  background: rgba(10, 10, 12, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 20;
+}
+
+/* live-market pill (pulse conveys "streaming", not P&L) */
+.live-pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.live-pill .live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gain);
+  animation: bc-pulse 1.6s infinite;
+}
+
+@keyframes bc-pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.35; }
+  100% { opacity: 1; }
 }
 
 .indices-container {
@@ -222,8 +278,7 @@ input:focus-visible {
   gap: 24px;
 }
 
-.nifty,
-.sensex {
+.index-group {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -434,6 +489,46 @@ input:focus-visible {
   justify-content: space-between;
   font-size: 0.82rem;
   font-weight: 500;
+}
+
+.item-symbol {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.symbol-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: var(--ink-2);
+  flex-shrink: 0;
+}
+
+.symbol-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.sparkline {
+  flex-shrink: 0;
+}
+
+.sparkline.up {
+  color: var(--gain);
+}
+
+.sparkline.down {
+  color: var(--loss);
 }
 
 .item-info {
@@ -656,6 +751,65 @@ input:focus-visible {
   background: var(--loss-soft);
 }
 
+/* Order lifecycle chips (Orders page) */
+.status-chip {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.status-chip.filled {
+  color: var(--gain);
+  background: var(--gain-soft);
+}
+
+.status-chip.open {
+  color: #ffb300;
+  background: rgba(255, 179, 0, 0.12);
+}
+
+.status-chip.cancelled {
+  color: var(--ink-3);
+  background: var(--border);
+}
+
+.status-chip.rejected {
+  color: var(--loss);
+  background: var(--loss-soft);
+}
+
+.btn-small {
+  font-size: 0.7rem;
+  padding: 4px 12px;
+}
+
+/* Candlestick chart needs an explicit height for chart.js to fill */
+.candle-body {
+  position: relative;
+  height: 340px;
+}
+
+/* Funds page explainer */
+.funds-note {
+  padding: 20px 24px;
+  max-width: 640px;
+}
+
+.funds-note h4 {
+  margin: 0 0 10px;
+  color: var(--ink);
+}
+
+.funds-note p {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -680,47 +834,64 @@ input:focus-visible {
   margin-top: 24px;
 }
 
+.row.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .col {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
-  padding: 18px 20px;
+  padding: 18px 20px 16px;
+}
+
+.col .col-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-3);
 }
 
 .col h5 {
-  font-size: 1.35rem;
-  font-weight: 600;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--ink);
+  margin-top: 10px;
 }
 
 .col h5 span {
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-size: 1.15rem;
 }
 
-.col p {
-  font-size: 0.75rem;
+.col .col-delta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.col .col-sub {
+  font-size: 0.74rem;
   font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--ink-3);
-  margin-top: 6px;
 }
 
-.col span {
+/* Funds page keeps a plain section-header span at the top of its .col panels */
+.col > span {
   display: flex;
   align-items: center;
   margin-bottom: 8px;
 }
 
-.col span p {
+.col > span p {
   font-size: 0.95rem;
   font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0;
   color: var(--ink);
-  margin-top: 0;
 }
 
 .chart-panel {
@@ -799,95 +970,113 @@ input:focus-visible {
 }
 
 /* ============================================================
-   Summary page
+   Summary (dashboard) page
    ============================================================ */
-.username h6 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--ink);
-  margin-bottom: 16px;
-}
-
-.divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 20px 0;
-}
-
-.section {
-  padding-bottom: 8px;
-}
-
-.section span {
+.dash-header {
   display: flex;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.section span p {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-
-.data {
-  display: flex;
-  align-items: center;
-  gap: 32px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
-  padding: 20px 24px;
-  max-width: 560px;
-}
-
-.data .first h3 {
-  font-size: 1.9rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.data .first p {
-  font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  margin-top: 6px;
-}
-
-.data .first small {
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-.data hr {
-  border: none;
-  border-left: 1px solid var(--border);
-  height: 64px;
-  margin: 0;
-}
-
-.data .second p {
-  font-size: 0.82rem;
-  color: var(--ink-2);
-  margin-bottom: 10px;
-  white-space: nowrap;
-  display: flex;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
 }
 
-.data .second p:last-child {
-  margin-bottom: 0;
-}
-
-.data .second p span {
-  font-weight: 600;
+.dash-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--ink);
+}
+
+.dash-date {
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  margin-top: 3px;
+}
+
+/* --- portfolio chart card --- */
+.chart-card {
+  margin-top: 24px;
+  padding: 22px 22px 14px;
+  border-radius: var(--radius-lg);
+}
+
+.chart-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.chart-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.chart-value {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-top: 3px;
+}
+
+.chart-delta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 5px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.chart-delta .today {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.range-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 4px;
+  border-radius: 11px;
+}
+
+.range-tab {
+  border: none;
+  background: transparent;
+  padding: 6px 13px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.range-tab:hover {
+  color: var(--ink);
+}
+
+.range-tab.selected {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.chart-body {
+  margin-top: 14px;
+  height: 260px;
+}
+
+.chart-body svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
 }
 
 /* ============================================================
@@ -945,6 +1134,10 @@ input:focus-visible {
   .indices-container {
     display: none;
   }
+
+  .row.cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 860px) {
@@ -971,19 +1164,9 @@ input:focus-visible {
     overflow: visible;
   }
 
-  .row {
+  .row,
+  .row.cols-4 {
     grid-template-columns: 1fr;
-  }
-
-  .data {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 20px;
-    max-width: none;
-  }
-
-  .data hr {
-    display: none;
   }
 
   .funds {
