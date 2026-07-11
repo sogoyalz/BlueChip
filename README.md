@@ -1,5 +1,7 @@
 # BlueChip — Crypto Paper-Trading Platform
 
+![CI](https://github.com/sogoyalz/BlueChip/actions/workflows/ci.yml/badge.svg)
+
 A full-stack **crypto paper-trading platform** built with the **MERN stack** (MongoDB, Express, React, Node.js). Anyone can sign up, get **$100,000 in simulated funds**, and trade Bitcoin, Ethereum, Solana and more at **real live prices from the Gemini exchange** — market data streams in over Gemini's public WebSocket, and orders execute against a custom-built simulated exchange engine with market & limit orders, an order matcher, portfolio history, and a leaderboard.
 
 > Paper trading only: no real money is ever deposited, withdrawn, or at risk. "BlueChip" is a fictional brand, not affiliated with Gemini or any real broker.
@@ -7,6 +9,16 @@ A full-stack **crypto paper-trading platform** built with the **MERN stack** (Mo
 📖 **New here? Read [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md)** — a complete walkthrough of every technology choice (and why), the architecture, and what every file in the repo does.
 
 ![BlueChip landing page](docs/screenshots/landing-home.png)
+
+## 📸 See it in action
+
+Placing a limit order and watching the matching engine fill it against the live market:
+
+![Demo — limit order filled by the matcher](docs/screenshots/demo.gif)
+
+| Trading dashboard | Real Gemini candles |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard-summary.png) | ![Candlestick chart](docs/screenshots/market-candles.png) |
 
 ---
 
