@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 import GeneralContext from "./GeneralContext";
 import { usePrices } from "./PricesContext";
 import CandleChart from "./shared/CandleChart";
+import DepthPanel from "./shared/DepthPanel";
 import PnLValue from "./shared/PnLValue";
 import Skeleton from "./shared/Skeleton";
 import { Candle, CandleTimeframe } from "../types";
@@ -135,6 +136,8 @@ const MarketDetail = () => {
           )}
         </div>
       </div>
+
+      <DepthPanel symbol={pair} />
     </>
   );
 };

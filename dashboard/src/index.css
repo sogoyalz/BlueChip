@@ -792,6 +792,95 @@ input:focus-visible {
   height: 340px;
 }
 
+/* Order book depth panel (market detail page) */
+.depth-panel {
+  margin-top: 16px;
+  padding: 18px 22px;
+}
+
+.depth-title-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.depth-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.depth-side-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.depth-side-label.up {
+  color: var(--gain);
+}
+
+.depth-side-label.down {
+  color: var(--loss);
+}
+
+.depth-row {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 8px;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+
+.depth-row.depth-head {
+  color: var(--ink-3);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.depth-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 0;
+}
+
+.depth-bar[data-kind="bid"] {
+  background: var(--gain-soft);
+}
+
+.depth-bar[data-kind="ask"] {
+  background: var(--loss-soft);
+}
+
+.depth-price,
+.depth-qty {
+  position: relative;
+  z-index: 1;
+}
+
+.depth-price.up {
+  color: var(--gain);
+}
+
+.depth-price.down {
+  color: var(--loss);
+}
+
+.depth-qty {
+  color: var(--ink-2);
+}
+
+@media (max-width: 720px) {
+  .depth-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Funds page explainer */
 .funds-note {
   padding: 20px 24px;
