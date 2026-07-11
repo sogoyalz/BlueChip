@@ -25,6 +25,9 @@ Placing a limit order and watching the matching engine fill it against the live 
 ## ✨ Features
 
 - **Live Gemini market data** — one shared backend feed (WebSocket streaming + REST fallback, no API key needed) serves every user: live watchlist, tickers, and real OHLC candlestick charts
+- **Streaming end to end** — prices flow Gemini WebSocket → backend cache → **Server-Sent Events** → browser, with automatic fallback to polling
+- **Live order book depth** — real bids and asks maintained from Gemini's l2 feed, top-of-book with spread on every market page
+- **Realized vs unrealized P&L** — sells book profit against weighted-average cost per order and per account, like a real brokerage statement
 - **Simulated exchange engine** — market orders fill instantly at the live price; limit orders rest in the book and a background matcher fills them when the market crosses (price-or-better), with atomic no-overdraft accounting (conditional MongoDB updates, no locks)
 - **Per-user portfolios** — every account starts with $100k simulated cash; holdings track weighted-average cost; sell-all leaves no float dust
 - **Portfolio history** — periodic + per-fill snapshots power a real performance chart (no fake data)
@@ -138,6 +141,8 @@ Base URL: `http://localhost:3002`
 | `GET` | `/healthz` | — | Health: WebSocket + price freshness |
 | `GET` | `/api/symbols` | — | Supported Gemini pairs |
 | `GET` | `/api/prices` | — | Live price cache (all symbols) |
+| `GET` | `/api/stream` | — | Live prices over Server-Sent Events |
+| `GET` | `/api/book/:symbol` | — | Top 10 bids/asks from the live order book |
 | `GET` | `/api/candles/:symbol?timeframe=1hr` | — | OHLCV history (cached proxy) |
 | `GET` | `/allHoldings` | ✅ | Your holdings, enriched with live prices |
 | `GET` | `/api/account` | ✅ | Balance + live portfolio value |
