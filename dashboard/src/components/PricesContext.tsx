@@ -4,10 +4,11 @@ import axios from "axios";
 import { API_URL } from "../config";
 import { SymbolInfo, TickerPrice } from "../types";
 
-// One shared poll of the backend's Gemini price cache feeds every component
-// (watchlist, top bar, trade modal, charts). 5s keeps the UI feeling live
-// without hammering the backend; upgrading this file to SSE/WebSocket later
-// touches nothing else.
+// One shared feed of the backend's Gemini price cache drives every
+// component (watchlist, top bar, trade modal, charts). Prices arrive over
+// Server-Sent Events — streaming end to end: Gemini WebSocket -> backend
+// cache -> SSE -> here. If the stream can't connect (old proxy, backend
+// mid-restart), we quietly fall back to polling /api/prices.
 
 const POLL_MS = 5000;
 // If we haven't heard from the backend in this long, flag prices as stale.
@@ -35,6 +36,8 @@ export const PricesProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     let cancelled = false;
+    let es: EventSource | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
 
     axios
       .get<SymbolInfo[]>(`${API_URL}/api/symbols`)
@@ -43,26 +46,60 @@ export const PricesProvider = ({ children }: { children: React.ReactNode }) => {
       })
       .catch((err) => console.error("Failed to load symbols:", err));
 
+    const apply = (next: Record<string, TickerPrice>) => {
+      if (cancelled) return;
+      lastSuccess.current = Date.now();
+      setPrices(next);
+      setIsStale(Object.keys(next).length === 0);
+    };
+
     const fetchPrices = () => {
       axios
         .get<{ prices: Record<string, TickerPrice> }>(`${API_URL}/api/prices`)
-        .then((res) => {
-          if (cancelled) return;
-          lastSuccess.current = Date.now();
-          setPrices(res.data.prices);
-          setIsStale(Object.keys(res.data.prices).length === 0);
-        })
+        .then((res) => apply(res.data.prices))
         .catch(() => {
           if (cancelled) return;
           if (Date.now() - lastSuccess.current > STALE_AFTER_MS) setIsStale(true);
         });
     };
 
-    fetchPrices();
-    const timer = setInterval(fetchPrices, POLL_MS);
+    const startPolling = () => {
+      if (pollTimer || cancelled) return;
+      fetchPrices();
+      pollTimer = setInterval(fetchPrices, POLL_MS);
+    };
+
+    // Prefer the SSE stream; EventSource reconnects on its own, but if the
+    // stream errors before ever delivering data we fall back to polling.
+    if (typeof EventSource !== "undefined") {
+      try {
+        es = new EventSource(`${API_URL}/api/stream`);
+        es.addEventListener("prices", (e) => {
+          try {
+            apply(JSON.parse((e as MessageEvent).data).prices);
+          } catch {
+            // malformed frame — ignore, next one is 2s away
+          }
+        });
+        es.onerror = () => {
+          if (lastSuccess.current === 0) {
+            es?.close();
+            es = null;
+            startPolling();
+          }
+          // else: EventSource retries by itself; keep the last good prices
+        };
+      } catch {
+        startPolling();
+      }
+    } else {
+      startPolling();
+    }
+
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      es?.close();
+      if (pollTimer) clearInterval(pollTimer);
     };
   }, []);
 
