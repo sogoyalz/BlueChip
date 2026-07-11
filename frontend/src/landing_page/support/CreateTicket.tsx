@@ -6,8 +6,8 @@ const topics = [
     title: "Account Opening",
     links: [
       "Online Account Opening",
-      "Company, Partnership and HUF Accounts",
-      "NRI Account Opening",
+      "Joint and LLC Accounts",
+      "Retirement Accounts (IRA)",
       "Charges at BlueChip",
       "Getting Started",
     ],
@@ -40,8 +40,8 @@ const topics = [
     links: [
       "Adding funds",
       "Withdrawing funds",
-      "UPI and bank transfers",
-      "Payin and payout timelines",
+      "ACH and wire transfers",
+      "Deposit and withdrawal timelines",
     ],
   },
   {

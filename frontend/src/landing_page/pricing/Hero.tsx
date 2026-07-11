@@ -7,7 +7,7 @@ function Hero() {
         <span className="eyebrow">Pricing</span>
         <h1 className="section-title mb-3">Simple, transparent pricing</h1>
         <p className="section-lede mx-auto">
-          Free equity investments and flat ₹20 intraday and F&O trades
+          $0 commissions on stocks and ETFs, and flat $0.65 options contracts
         </p>
       </div>
       <div className="section">
@@ -19,10 +19,10 @@ function Hero() {
                 alt="Zero brokerage"
                 className="mb-3"
               />
-              <h2 className="fs-4 mb-3">Free equity delivery</h2>
+              <h2 className="fs-4 mb-3">$0 stock &amp; ETF trades</h2>
               <p className="text-muted mb-0">
-                All equity delivery investments (NSE, BSE), are absolutely
-                free — ₹0 brokerage.
+                All online US-listed stock and ETF trades (NASDAQ, NYSE) are
+                absolutely free — $0 commissions.
               </p>
             </div>
           </div>
@@ -30,13 +30,13 @@ function Hero() {
             <div className="panel h-100">
               <img
                 src="/media/images/pricingFlat.svg"
-                alt="Flat ₹20 per order"
+                alt="Flat per-contract options pricing"
                 className="mb-3"
               />
-              <h2 className="fs-4 mb-3">Intraday and F&O trades</h2>
+              <h2 className="fs-4 mb-3">Options trading</h2>
               <p className="text-muted mb-0">
-                Flat ₹20 or 0.03% (whichever is lower) per executed order on
-                intraday trades across equity, currency, and commodity trades.
+                Flat $0.65 per contract per executed options order, with no
+                base commission and no exercise or assignment fees.
               </p>
             </div>
           </div>
@@ -47,10 +47,10 @@ function Hero() {
                 alt="Zero commission"
                 className="mb-3"
               />
-              <h2 className="fs-4 mb-3">Free direct MF</h2>
+              <h2 className="fs-4 mb-3">No-fee mutual funds</h2>
               <p className="text-muted mb-0">
-                All direct mutual fund investments are absolutely free — ₹0
-                commissions &amp; DP charges.
+                Thousands of no-transaction-fee mutual funds — $0 commissions
+                &amp; account maintenance fees.
               </p>
             </div>
           </div>

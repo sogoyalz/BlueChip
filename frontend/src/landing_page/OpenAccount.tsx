@@ -8,8 +8,8 @@ function OpenAccount() {
         <span className="eyebrow">Get started</span>
         <h2 className="section-title mb-3">Open a BlueChip account</h2>
         <p className="section-lede mx-auto mb-4">
-          Modern platforms and apps, ₹0 investments, and flat ₹20 intraday and
-          F&O trades.
+          Modern platforms and apps, $0 stock and ETF trades, and flat $0.65
+          options contracts.
         </p>
         <Link className="btn btn-primary btn-lg" to="/signup">
           Sign up for free

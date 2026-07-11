@@ -11,21 +11,21 @@ function Brokerage() {
               <h3 className="fs-5 mb-4">Good to know</h3>
               <ul className="checklist fine-print mb-0">
                 <li>
-                  Statutory charges (STT, exchange fees, GST, stamp duty) apply
-                  on every trade and are always shown before you place an
+                  Regulatory fees (SEC and FINRA trading activity fees) apply
+                  on sell orders and are always shown before you place an
                   order.
                 </li>
                 <li>
-                  Digital contract notes will be sent via e-mail, free of
-                  charge.
+                  Digital trade confirmations and statements will be sent via
+                  e-mail, free of charge.
                 </li>
                 <li>
-                  Physical copies of contract notes, if required, shall be
-                  charged ₹20 per contract note. Courier charges apply.
+                  Paper copies of trade confirmations, if required, are
+                  charged $2 per statement. Postage charges apply.
                 </li>
                 <li>
-                  Payment gateway deposits are free via UPI; a nominal fee
-                  applies to net-banking transfers.
+                  ACH deposits and withdrawals are free; a nominal fee applies
+                  to wire transfers.
                 </li>
                 <li>
                   There are no hidden platform fees, subscription tiers, or

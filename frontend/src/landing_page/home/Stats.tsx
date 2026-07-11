@@ -27,8 +27,8 @@ function Stats() {
             <div className="col-sm-6">
               <h3 className="fs-6 mb-2">The BlueChip universe</h3>
               <p className="text-muted mb-0">
-                Not just an app, but a whole ecosystem. Stocks, derivatives,
-                mutual funds, bonds, and IPOs — one account, every market.
+                Not just an app, but a whole ecosystem. Stocks, options, ETFs,
+                bonds, and IPOs — one account, every market.
               </p>
             </div>
             <div className="col-sm-6">

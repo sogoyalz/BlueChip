@@ -15,8 +15,8 @@
   <line x1="60" y1="76" x2="1140" y2="76" stroke="#2a2a2a"/>
   <rect x="88" y="38" width="20" height="20" rx="5" fill="#e50914"/>
   <text x="116" y="54" font-family="Inter, sans-serif" font-size="15" font-weight="700" fill="#f5f5f5">Blue<tspan fill="#e50914">Chip</tspan></text>
-  <text x="820" y="54" font-family="Inter, sans-serif" font-size="13" fill="#a0a0a0">ALPHA 50 <tspan fill="#00c853">21,482.10 ▲ 0.84%</tspan></text>
-  <text x="1010" y="54" font-family="Inter, sans-serif" font-size="13" fill="#a0a0a0">VOLT <tspan fill="#ff5252">64,210.55 ▼ 0.31%</tspan></text>
+  <text x="820" y="54" font-family="Inter, sans-serif" font-size="13" fill="#a0a0a0">S&amp;P 500 <tspan fill="#00c853">6,482.10 ▲ 0.84%</tspan></text>
+  <text x="1010" y="54" font-family="Inter, sans-serif" font-size="13" fill="#a0a0a0">NASDAQ <tspan fill="#ff5252">21,210.55 ▼ 0.31%</tspan></text>
 
   <!-- watchlist panel -->
   <rect x="84" y="96" width="280" height="380" rx="10" fill="#0f0f0f" stroke="#2a2a2a"/>
@@ -59,14 +59,14 @@
   <g font-family="Inter, sans-serif">
     <rect x="384" y="402" width="230" height="74" rx="10" fill="#0f0f0f" stroke="#2a2a2a"/>
     <text x="404" y="430" font-size="11" fill="#666666" letter-spacing="1">INVESTED</text>
-    <text x="404" y="456" font-size="18" font-weight="600" fill="#f5f5f5">4,08,650</text>
+    <text x="404" y="456" font-size="18" font-weight="600" fill="#f5f5f5">$408,650</text>
 
     <rect x="634" y="402" width="230" height="74" rx="10" fill="#0f0f0f" stroke="#2a2a2a"/>
     <text x="654" y="430" font-size="11" fill="#666666" letter-spacing="1">CURRENT VALUE</text>
-    <text x="654" y="456" font-size="18" font-weight="600" fill="#f5f5f5">4,52,190</text>
+    <text x="654" y="456" font-size="18" font-weight="600" fill="#f5f5f5">$452,190</text>
 
     <rect x="884" y="402" width="232" height="74" rx="10" fill="#0f0f0f" stroke="#2a2a2a"/>
     <text x="904" y="430" font-size="11" fill="#666666" letter-spacing="1">TOTAL P&amp;L</text>
-    <text x="904" y="456" font-size="18" font-weight="600" fill="#00c853">+43,540 ▲ 10.6%</text>
+    <text x="904" y="456" font-size="18" font-weight="600" fill="#00c853">+$43,540 ▲ 10.6%</text>
   </g>
 </svg>

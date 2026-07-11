@@ -11,7 +11,7 @@ describe('Awards Component', () => {
 
     test("renders the product list items", () => {
         render(<Awards />);
-        expect(screen.getByText('Future Options')).toBeInTheDocument();
-        expect(screen.getByText('Stocks & IPOs')).toBeInTheDocument();
+        expect(screen.getByText('Stocks & ETFs')).toBeInTheDocument();
+        expect(screen.getByText('Mutual funds')).toBeInTheDocument();
     });
 });
