@@ -21,7 +21,8 @@ ChartJS.register(
   Legend
 );
 
-const font = { family: "Inter, sans-serif", size: 11 };
+// Canvas can't resolve CSS vars — these mirror the index.css tokens.
+const font = { family: "Manrope, sans-serif", size: 11 };
 
 export const options: ChartOptions<"bar"> = {
   responsive: true,
@@ -30,7 +31,7 @@ export const options: ChartOptions<"bar"> = {
     legend: { display: false },
     title: { display: false },
     tooltip: {
-      backgroundColor: "#16181d",
+      backgroundColor: "#1c1c21", // --surface-hover
       titleFont: font,
       bodyFont: font,
       padding: 10,
@@ -41,13 +42,13 @@ export const options: ChartOptions<"bar"> = {
   scales: {
     x: {
       grid: { display: false },
-      border: { color: "#2a2a2a" },
-      ticks: { color: "#666666", font },
+      border: { color: "#222228" }, // --border
+      ticks: { color: "#6c6c74", font }, // --ink-3
     },
     y: {
-      grid: { color: "#2a2a2a" },
+      grid: { color: "#222228" },
       border: { display: false },
-      ticks: { color: "#666666", font },
+      ticks: { color: "#6c6c74", font },
     },
   },
 };

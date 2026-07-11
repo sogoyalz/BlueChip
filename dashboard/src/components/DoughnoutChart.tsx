@@ -11,7 +11,8 @@ import { Doughnut } from "react-chartjs-2";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
-const font = { family: "Inter, sans-serif", size: 11 };
+// Canvas can't resolve CSS vars — these mirror the index.css tokens.
+const font = { family: "Manrope, sans-serif", size: 11 };
 
 const options: ChartOptions<"doughnut"> = {
   responsive: true,
@@ -20,7 +21,7 @@ const options: ChartOptions<"doughnut"> = {
     legend: {
       position: "bottom",
       labels: {
-        color: "#a0a0a0",
+        color: "#a0a0a8", // --ink-2
         font,
         usePointStyle: true,
         pointStyle: "circle",
@@ -30,7 +31,7 @@ const options: ChartOptions<"doughnut"> = {
       },
     },
     tooltip: {
-      backgroundColor: "#16181d",
+      backgroundColor: "#1c1c21", // --surface-hover
       titleFont: font,
       bodyFont: font,
       padding: 10,

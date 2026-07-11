@@ -23,8 +23,8 @@ const mockedGet = axios.get as jest.Mock;
 const mockedToastError = toast.error as unknown as jest.Mock;
 
 const holdings = [
-  { name: "INFY", qty: 2, avg: 110, price: 150, net: "+36.36%", day: "-1.60%" },
-  { name: "TCS", qty: 3, avg: 200, price: 180, net: "-10.00%", day: "+0.25%" },
+  { symbol: "BTCUSD", qty: 2, avgCost: 110, price: 150, dayChangePct: -1.6 },
+  { symbol: "ETHUSD", qty: 3, avgCost: 200, price: 180, dayChangePct: 0.25 },
 ];
 
 const renderHoldings = () =>
@@ -37,6 +37,9 @@ const renderHoldings = () =>
 describe("Holdings", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // The component only fetches once the auth cookie exists (the ?token=
+    // login handoff means the first render can legitimately have none).
+    document.cookie = "token=test-token";
   });
 
   test("shows a loading row while the request is in flight", () => {
@@ -57,18 +60,18 @@ describe("Holdings", () => {
   test("renders rows and computes the summary from the data", async () => {
     mockedGet.mockResolvedValue({ data: holdings });
     renderHoldings();
-    expect(await screen.findByText("INFY")).toBeInTheDocument();
+    expect(await screen.findByText("BTCUSD")).toBeInTheDocument();
 
     // investment = 2*110 + 3*200 = 820; current = 2*150 + 3*180 = 840
-    expect(screen.getByText("820.00")).toBeInTheDocument();
-    expect(screen.getByText("840.00")).toBeInTheDocument();
+    expect(screen.getByText("$820.00")).toBeInTheDocument();
+    expect(screen.getByText("$840.00")).toBeInTheDocument();
     expect(screen.getByText(/20\.00 \(\+2\.44%\)/)).toBeInTheDocument();
 
-    // per-row P&L: INFY 300-220=80.00 (profit), TCS 540-600=-60.00 (loss)
+    // per-row P&L: BTC 300-220=80.00 (profit), ETH 540-600=-60.00 (loss)
     expect(screen.getByText("80.00")).toHaveClass("profit");
     expect(screen.getByText("-60.00")).toHaveClass("loss");
 
-    // day-change colouring derives from the sign of the value
+    // 24h-change colouring derives from the sign of the value
     expect(screen.getByText("-1.60%")).toHaveClass("loss");
     expect(screen.getByText("+0.25%")).toHaveClass("profit");
   });
