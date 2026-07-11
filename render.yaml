@@ -1,0 +1,21 @@
+# Render Blueprint — deploys the backend as a free web service.
+# One-time setup: dashboard.render.com → New → Blueprint → select this repo.
+# You'll be prompted for the two sync:false env vars:
+#   MONGO_URL     — the MongoDB Atlas connection string
+#   CORS_ORIGINS  — comma-separated Netlify URLs of the two frontends
+services:
+  - type: web
+    name: bluechip-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run serve
+    healthCheckPath: /healthz
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: TOKEN_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
