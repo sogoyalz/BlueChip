@@ -1,22 +1,59 @@
-import React from 'react';
-import { render, screen } from '@testing-library/react';
+import React from "react";
+import { render, screen } from "@testing-library/react";
+import { CookiesProvider } from "react-cookie";
+import axios from "axios";
 import Funds from "./Funds";
 
-describe('Funds Component', () => {
-    test("renders the fund transfer tagline", () => {
-        render(<Funds />);
-        expect(
-            screen.getByText(/Instant, zero-cost fund transfers with UPI/i)
-        ).toBeInTheDocument();
-    });
+jest.mock("axios", () => ({
+  __esModule: true,
+  default: { get: jest.fn(), post: jest.fn() },
+}));
 
-    test("renders the Add funds and Withdraw buttons", () => {
-        render(<Funds />);
-        expect(
-            screen.getByRole('button', { name: /Add funds/i })
-        ).toBeInTheDocument();
-        expect(
-            screen.getByRole('button', { name: /Withdraw/i })
-        ).toBeInTheDocument();
+jest.mock("react-toastify", () => ({
+  toast: { error: jest.fn(), success: jest.fn() },
+}));
+
+const mockedGet = axios.get as jest.Mock;
+
+const renderFunds = () =>
+  render(
+    <CookiesProvider>
+      <Funds />
+    </CookiesProvider>
+  );
+
+describe("Funds", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    document.cookie = "token=test-token";
+  });
+
+  test("renders the account balances from the API", async () => {
+    mockedGet.mockResolvedValue({
+      data: {
+        username: "alice",
+        email: "a@b.com",
+        balance: 80000,
+        portfolioValue: 112500,
+      },
     });
+    renderFunds();
+    expect(await screen.findByText("$80,000.00")).toBeInTheDocument();
+    expect(screen.getByText("$112,500.00")).toBeInTheDocument();
+    // total return = 112500 - 100000
+    expect(screen.getByText(/12,500\.00/)).toBeInTheDocument();
+  });
+
+  test("explains paper trading and offers a reset", async () => {
+    mockedGet.mockResolvedValue({
+      data: { username: "alice", email: "a@b.com", balance: 100000 },
+    });
+    renderFunds();
+    expect(
+      await screen.findByText(/paper-trading platform/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /reset account/i })
+    ).toBeInTheDocument();
+  });
 });

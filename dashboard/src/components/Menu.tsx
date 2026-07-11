@@ -6,7 +6,7 @@ const menuItems = [
   { to: "/", label: "Dashboard" },
   { to: "/orders", label: "Orders" },
   { to: "/holdings", label: "Holdings" },
-  { to: "/positions", label: "Positions" },
+  { to: "/leaderboard", label: "Leaderboard" },
   { to: "/funds", label: "Funds" },
   { to: "/apps", label: "Apps" },
 ];
@@ -21,7 +21,7 @@ const Menu = () => {
 
   return (
     <div className="menu-container">
-      <img src="logo.svg" style={{ width: "50px" }} alt="BlueChip" />
+      <img src="/logo.svg" style={{ width: "50px" }} alt="BlueChip" />
       <div className="menus">
         <ul>
           {menuItems.map((item) => (
