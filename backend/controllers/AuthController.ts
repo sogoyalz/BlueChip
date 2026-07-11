@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import { UserModel } from "../model/UserModel";
 import { createSecretToken } from "../util/SecretToken";
+import { snapshotUser } from "../services/snapshots";
 
 // REGISTER
 export const Signup = async (req: Request, res: Response): Promise<void> => {
@@ -10,6 +11,17 @@ export const Signup = async (req: Request, res: Response): Promise<void> => {
 
     if (!email || !password || !username) {
       res.status(400).json({ success: false, message: "All fields are required" });
+      return;
+    }
+    if (
+      typeof email !== "string" ||
+      typeof username !== "string" ||
+      typeof password !== "string" ||
+      email.length > 254 ||
+      username.length > 32 ||
+      password.length > 128
+    ) {
+      res.status(400).json({ success: false, message: "Field too long" });
       return;
     }
 
@@ -22,6 +34,9 @@ export const Signup = async (req: Request, res: Response): Promise<void> => {
 
     // 2. Create the user (the pre-save hook hashes the password)
     const user = await UserModel.create({ email, password, username });
+
+    // Baseline chart point at the starting balance (fire-and-forget).
+    void snapshotUser(user._id);
 
     // 3. Sign a token and put it in a cookie
     const token = createSecretToken(user._id);
