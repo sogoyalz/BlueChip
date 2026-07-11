@@ -1,0 +1,13 @@
+{
+  "name": "bluechip-demo-gif",
+  "private": true,
+  "description": "Records the README demo GIF: places a limit order against the live market and captures the matcher filling it. Requires the backend (:3002) and dashboard (:3001) running locally.",
+  "scripts": {
+    "record": "node record.js"
+  },
+  "dependencies": {
+    "gifenc": "^1.0.3",
+    "pngjs": "^7.0.0",
+    "puppeteer-core": "^24.0.0"
+  }
+}
