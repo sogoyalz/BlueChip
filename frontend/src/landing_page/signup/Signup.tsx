@@ -23,9 +23,10 @@ function Signup() {
       if (data.success) {
         toast.success(data.message);
         setTimeout(() => {
-          // The dashboard runs on a different origin and cannot read the
-          // cookie set for this origin, so hand the token over in the URL.
-          window.location.href = `${DASHBOARD_URL}?token=${data.token}`;
+          // The signup response already set the auth cookie (sameSite:none in
+          // production, shared localhost domain in dev), so the dashboard is
+          // authenticated the moment it loads — no token in the URL.
+          window.location.href = DASHBOARD_URL;
         }, 1000);
       } else {
         toast.error(data.message);
@@ -43,11 +44,39 @@ function Signup() {
 
   return (
     <div className="auth-wrapper">
-      <div className="auth-card">
-        <h2>Create account</h2>
-        <p className="auth-subtitle">Open a free account in a few seconds.</p>
+      <div className="auth-split">
+        <aside className="auth-aside">
+          <span className="auth-brand">
+            <img src="/media/images/logo.svg" alt="BlueChip" />
+          </span>
+          <h1 className="auth-headline">
+            Trade crypto for real, <span className="accent">risk nothing.</span>
+          </h1>
+          <p className="auth-blurb">
+            Your orders place for real on Gemini's sandbox exchange at live
+            market prices. The mechanics are real — the money never is.
+          </p>
+          <ul className="auth-points">
+            <li>
+              <span className="tick">✓</span>
+              Live Bitcoin, Ethereum &amp; Solana prices from Gemini
+            </li>
+            <li>
+              <span className="tick">✓</span>
+              Real market &amp; limit orders with honest fills and P&amp;L
+            </li>
+            <li>
+              <span className="tick">✓</span>
+              Zero deposits, zero fees, zero real money at risk
+            </li>
+          </ul>
+        </aside>
 
-        <form onSubmit={handleSubmit}>
+        <div className="auth-card">
+          <h2>Create account</h2>
+          <p className="auth-subtitle">Open a free account in a few seconds.</p>
+
+          <form onSubmit={handleSubmit}>
           <div className="mb-3">
             <label className="form-label" htmlFor="email">
               Email
@@ -87,8 +116,9 @@ function Signup() {
               type="password"
               name="password"
               className="form-control"
-              placeholder="Create a password"
+              placeholder="Create a password (min. 8 characters)"
               onChange={handleChange}
+              minLength={8}
               required
             />
           </div>
@@ -100,7 +130,8 @@ function Signup() {
           <span className="auth-switch">
             Already have an account? <Link to="/login">Login</Link>
           </span>
-        </form>
+          </form>
+        </div>
       </div>
       <ToastContainer position="top-right" autoClose={2500} />
     </div>

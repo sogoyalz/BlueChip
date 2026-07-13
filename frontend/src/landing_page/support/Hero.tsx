@@ -20,7 +20,6 @@ function Hero() {
             className="mb-4"
           />
           <div className="chip-row">
-            <a href="#createTicket">Reset my account</a>
             <a href="#createTicket">Where prices come from</a>
             <a href="#createTicket">Limit orders</a>
             <a href="#createTicket">Terminal user guide</a>
@@ -31,12 +30,12 @@ function Hero() {
           <ol>
             <li className="mb-2">
               <a href="#createTicket">
-                How limit orders rest and fill — price-or-better explained
+                How limit orders rest and fill on Gemini's sandbox exchange
               </a>
             </li>
             <li>
               <a href="#createTicket">
-                How the leaderboard ranks traders by portfolio value
+                Why every trader shares the same sandbox account
               </a>
             </li>
           </ol>

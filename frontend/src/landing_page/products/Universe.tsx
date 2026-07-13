@@ -11,16 +11,16 @@ const features = [
     text: "Instant fills at market, or rest in the book at your price",
   },
   {
-    title: "Matching engine",
-    text: "Resting orders fill when the market crosses — price or better",
+    title: "Real sandbox fills",
+    text: "Orders place for real on Gemini's sandbox exchange and matching engine",
   },
   {
     title: "Candlestick charts",
     text: "Real OHLC history for every coin, from 15 minutes to daily",
   },
   {
-    title: "Leaderboard",
-    text: "Every trader ranked by live portfolio value",
+    title: "Live order book",
+    text: "Real bids and asks from Gemini's order book depth feed",
   },
   {
     title: "Market-data API",
@@ -35,8 +35,8 @@ function Universe() {
         <span className="eyebrow">Everything under one roof</span>
         <h2 className="section-title mb-3">The BlueChip platform</h2>
         <p className="section-lede mx-auto mb-4">
-          One account, a $100,000 practice balance, and eight major
-          cryptocurrencies at live market prices
+          One shared sandbox account and eight major cryptocurrencies at live
+          market prices
         </p>
 
         <div className="row gy-4 mb-5">

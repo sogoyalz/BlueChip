@@ -1,10 +1,10 @@
-# BlueChip — Crypto Paper-Trading Platform
+# BlueChip — Crypto Trading Platform (Gemini Sandbox)
 
 ![CI](https://github.com/sogoyalz/BlueChip/actions/workflows/ci.yml/badge.svg)
 
-A full-stack **crypto paper-trading platform** built with the **MERN stack** (MongoDB, Express, React, Node.js). Anyone can sign up, get **$100,000 in simulated funds**, and trade Bitcoin, Ethereum, Solana and more at **real live prices from the Gemini exchange** — market data streams in over Gemini's public WebSocket, and orders execute against a custom-built simulated exchange engine with market & limit orders, an order matcher, portfolio history, and a leaderboard.
+A full-stack **crypto trading platform** built with the **MERN stack** (MongoDB, Express, React, Node.js). Anyone can sign up and trade Bitcoin, Ethereum, Solana and more — orders are placed for real against **Gemini's sandbox exchange** (real order matching, real fills, real order lifecycle) using a single shared sandbox account with test funds.
 
-> Paper trading only: no real money is ever deposited, withdrawn, or at risk. "BlueChip" is a fictional brand, not affiliated with Gemini or any real broker.
+> No real money is ever deposited, withdrawn, or at risk — every order settles on Gemini's **sandbox** (`api.sandbox.gemini.com`), a separate test environment from Gemini's production exchange. "BlueChip" is a fictional brand, not affiliated with Gemini or any real broker. Every trader shares one sandbox account, so balances, holdings, and order history are shared across all users.
 
 📖 **New here? Read [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md)** — a complete walkthrough of every technology choice (and why), the architecture, and what every file in the repo does.
 
@@ -27,13 +27,11 @@ Placing a limit order and watching the matching engine fill it against the live 
 - **Live Gemini market data** — one shared backend feed (WebSocket streaming + REST fallback, no API key needed) serves every user: live watchlist, tickers, and real OHLC candlestick charts
 - **Streaming end to end** — prices flow Gemini WebSocket → backend cache → **Server-Sent Events** → browser, with automatic fallback to polling
 - **Live order book depth** — real bids and asks maintained from Gemini's l2 feed, top-of-book with spread on every market page
-- **Realized vs unrealized P&L** — sells book profit against weighted-average cost per order and per account, like a real brokerage statement
-- **Simulated exchange engine** — market orders fill instantly at the live price; limit orders rest in the book and a background matcher fills them when the market crosses (price-or-better), with atomic no-overdraft accounting (conditional MongoDB updates, no locks)
-- **Per-user portfolios** — every account starts with $100k simulated cash; holdings track weighted-average cost; sell-all leaves no float dust
-- **Portfolio history** — periodic + per-fill snapshots power a real performance chart (no fake data)
-- **Leaderboard** — all traders ranked by live portfolio value
-- **Authentication** — signup & login with bcrypt-hashed passwords and JWT
-- **Public-ready hardening** — rate limiting (auth, orders, global), body-size caps, `/healthz`, always-visible paper-trading disclaimer
+- **Real order execution** — market orders place as immediate-or-cancel limit orders crossed through Gemini's sandbox book; limit orders rest as real resting orders on the exchange. HMAC-SHA384-signed private API calls, a background sync loop reconciles local order status against Gemini's
+- **One shared sandbox account** — every signed-in user trades against the same Gemini sandbox account; balances, holdings, and order history are shared, not per-user
+- **Portfolio history** — periodic + per-fill snapshots of the shared account's value power a real performance chart
+- **Authentication** — signup & login with bcrypt-hashed passwords and JWT, gating who can place orders
+- **Public-ready hardening** — rate limiting (auth, orders, global), body-size caps, `/healthz`, always-visible sandbox disclaimer
 
 ---
 
@@ -56,7 +54,7 @@ BlueChip/
 
 **How prices flow:** the backend keeps one in-memory price cache. Gemini's public v2 market-data WebSocket streams trades into it (with heartbeat watchdog + exponential-backoff reconnect); a REST poller runs underneath as permanent fallback and supplies the 24h-change figure. The dashboard polls the cached prices — no user ever hits Gemini directly, so rate limits never scale with user count.
 
-**How trades settle:** entirely in our own MongoDB. Balance and holdings mutations are conditional atomic updates (`updateOne({balance: {$gte: cost}}, {$inc: ...})`) so concurrent orders can never overdraw an account — a losing race becomes a clean `REJECTED` order.
+**How trades settle:** for real, on Gemini's **sandbox** exchange. Placing an order signs an HMAC-SHA384 request (`X-GEMINI-APIKEY` / `X-GEMINI-PAYLOAD` / `X-GEMINI-SIGNATURE`) against `api.sandbox.gemini.com` using one shared API key for the whole app. MARKET orders are emulated as `immediate-or-cancel` limit orders priced to cross the book; LIMIT orders rest as real resting orders. A background sync loop (`services/orderSync.ts`) polls Gemini's order status every ~5s and reconciles local MongoDB order records (`OPEN` → `FILLED` / `PARTIALLY_FILLED` / `CANCELLED`) — Gemini itself is the source of truth for fills, matching, and balances. The backend refuses to boot if the private API base URL isn't pointed at the sandbox.
 
 ---
 
@@ -109,6 +107,15 @@ TOKEN_KEY=your_jwt_secret
 PORT=3002
 # Production only: comma-separated allowed browser origins
 # CORS_ORIGINS=https://your-landing.netlify.app,https://your-dashboard.netlify.app
+
+# Gemini SANDBOX trading credentials — register at
+# https://exchange.sandbox.gemini.com/ and create an API key with Trading
+# permission. One shared key for the whole app.
+GEMINI_API_KEY=your_sandbox_api_key
+GEMINI_API_SECRET=your_sandbox_api_secret
+# Must stay pointed at the sandbox — the app refuses to boot otherwise.
+# Defaults to https://api.sandbox.gemini.com if unset.
+# GEMINI_PRIVATE_API_URL=
 ```
 
 **`frontend/.env`**
@@ -144,14 +151,12 @@ Base URL: `http://localhost:3002`
 | `GET` | `/api/stream` | — | Live prices over Server-Sent Events |
 | `GET` | `/api/book/:symbol` | — | Top 10 bids/asks from the live order book |
 | `GET` | `/api/candles/:symbol?timeframe=1hr` | — | OHLCV history (cached proxy) |
-| `GET` | `/allHoldings` | ✅ | Your holdings, enriched with live prices |
-| `GET` | `/api/account` | ✅ | Balance + live portfolio value |
-| `POST` | `/api/orders` | ✅ | Place a MARKET or LIMIT order |
+| `GET` | `/api/holdings` | ✅ | The shared account's holdings, enriched with live prices |
+| `GET` | `/api/account` | ✅ | Shared cash balance + portfolio value |
+| `POST` | `/api/orders` | ✅ | Place a MARKET or LIMIT order (real Gemini sandbox order) |
 | `GET` | `/api/orders` | ✅ | Your orders (`?status=open` for resting) |
-| `POST` | `/api/orders/:id/cancel` | ✅ | Cancel a resting limit order |
-| `GET` | `/api/leaderboard` | ✅ | All traders ranked by portfolio value |
-| `GET` | `/api/portfolio/history?range=1W` | ✅ | Portfolio value snapshots |
-| `POST` | `/api/account/reset` | ✅ | Wipe holdings/orders, restore $100k |
+| `POST` | `/api/orders/:id/cancel` | ✅ | Cancel a resting order (cancels on Gemini first) |
+| `GET` | `/api/portfolio/history?range=1W` | ✅ | Shared portfolio value snapshots |
 
 ✅ = requires a valid JWT (cookie, `Authorization: Bearer`, or `?token=`).
 
@@ -166,12 +171,12 @@ POST /api/orders
 ## 🧪 Testing
 
 ```bash
-cd backend && npx jest      # engine, matcher, feeds, routes (100+ tests, no DB needed)
+cd backend && npx jest      # engine, order sync, feeds, routes (100+ tests, no DB needed)
 cd dashboard && npm test    # dashboard component tests
 cd frontend && npm test     # landing-site component tests
 ```
 
-Backend tests mock Mongoose models and the price feed, so they run fast and offline — including the concurrency edge cases (double-submit near full balance, cancel-vs-fill races, insufficient funds at limit-fill time).
+Backend tests mock Mongoose models, the price feed, and the Gemini sandbox client, so they run fast and offline — including order-placement edge cases (IOC rejects/partial fills, cancel-vs-fill races) against a mocked Gemini response, not a real sandbox call.
 
 ---
 
@@ -182,7 +187,7 @@ The repo is deploy-ready but nothing is deployed by default.
 1. **MongoDB Atlas** — create a free M0 cluster, get the connection string.
 2. **Backend → Render** (free tier): root directory `backend`, build `npm install && npm run build`, start `npm run serve`. Env: `MONGO_URL`, `TOKEN_KEY`, `CORS_ORIGINS` (both Netlify URLs).
 3. **Frontends → Netlify** (two sites): `frontend/netlify.toml` and `dashboard/netlify.toml` are already in place. Set the `REACT_APP_*` env vars per site (they're baked at build time).
-4. **Keep-alive**: point a free uptime pinger (UptimeRobot / cron-job.org) at `GET /healthz` every ~10 min — on Render's free tier the server sleeps when idle, which pauses the limit-order matcher and snapshots.
+4. **Keep-alive**: point a free uptime pinger (UptimeRobot / cron-job.org) at `GET /healthz` every ~10 min — on Render's free tier the server sleeps when idle, which pauses order syncing and snapshots.
 
 ---
 
@@ -194,16 +199,17 @@ backend/
 ├── controllers/    # request handlers (auth)
 ├── middlewares/    # JWT verification, rate limits
 ├── model/          # Mongoose models
-├── schemas/        # Mongoose schemas (User, Holding, Order, Snapshot)
+├── schemas/        # Mongoose schemas (User, Order, Snapshot)
 ├── routes/         # auth, market data, orders, portfolio
 ├── services/       # the interesting bits:
-│   ├── gemini.ts       # Gemini REST wrappers
-│   ├── geminiWs.ts     # WebSocket feed (watchdog + backoff reconnect)
-│   ├── priceFeed.ts    # shared in-memory price cache
-│   ├── orderEngine.ts  # validation + atomic fills
-│   ├── matcher.ts      # background limit-order matcher
-│   └── snapshots.ts    # portfolio history
-├── util/           # token helpers, money rounding
+│   ├── gemini.ts        # public Gemini REST wrappers (market data)
+│   ├── geminiWs.ts      # WebSocket feed (watchdog + backoff reconnect)
+│   ├── geminiPrivate.ts # HMAC-signed Gemini sandbox trading client
+│   ├── priceFeed.ts     # shared in-memory price cache
+│   ├── orderEngine.ts   # validation + real order placement/cancel
+│   ├── orderSync.ts     # reconciles local order status against Gemini
+│   └── snapshots.ts     # shared portfolio history
+├── util/           # money rounding
 └── index.ts        # app entry point
 
 frontend/src/landing_page/
@@ -212,7 +218,7 @@ frontend/src/landing_page/
 └── Navbar.tsx  Footer.tsx  ...
 
 dashboard/src/components/
-├── Dashboard.tsx  Holdings.tsx  Orders.tsx  Leaderboard.tsx
+├── Dashboard.tsx  Holdings.tsx  Orders.tsx
 ├── Funds.tsx  WatchList.tsx  Summary.tsx  MarketDetail.tsx
 ├── PricesContext.tsx  (shared live-price poll)
 └── shared/  (BuySellModal, CandleChart, DataTable, ...)

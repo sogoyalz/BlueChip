@@ -6,7 +6,7 @@ const topics = [
     title: "Account & Login",
     links: [
       "Creating your account",
-      "Your $100,000 starting balance",
+      "How the shared sandbox account works",
       "Logging in to the Terminal",
       "Resetting your password",
       "Getting started",
@@ -36,20 +36,20 @@ const topics = [
   },
   {
     icon: "fa-user",
-    title: "Portfolio & Leaderboard",
+    title: "Portfolio & Holdings",
     links: [
-      "Holdings and weighted-average cost",
-      "Unrealized P&L",
+      "Holdings, explained",
+      "Why the account is shared",
       "Portfolio value history",
-      "How the leaderboard is ranked",
+      "Buying power explained",
     ],
   },
   {
     icon: "fa-credit-card",
-    title: "Simulated Funds",
+    title: "Sandbox Funds",
     links: [
       "Why there are no deposits",
-      "Resetting to $100,000",
+      "What the Gemini sandbox is",
       "Buying power explained",
       "Nothing here is real money",
     ],

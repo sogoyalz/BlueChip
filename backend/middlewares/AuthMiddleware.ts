@@ -32,14 +32,18 @@ export const userVerification = (req: Request, res: Response): void => {
     return;
   }
 
-  jwt.verify(token, process.env.TOKEN_KEY as string, async (err: VerifyErrors | null, data: JwtVerifyResult) => {
+  jwt.verify(token, process.env.TOKEN_KEY as string, { algorithms: ["HS256"] }, async (err: VerifyErrors | null, data: JwtVerifyResult) => {
     if (err) {
       return res.json({ status: false }); // token is fake/expired
     }
     try {
       const payload = data as JwtPayload;
       const user = await UserModel.findById(payload.id); // payload.id came from the token
-      if (user) return res.json({ status: true, user: user.username });
+      // Reject tokens issued before the user's version was bumped (revocation).
+      // Missing on either side means 0 — legacy users/tokens predate the field.
+      if (user && (payload.tv ?? 0) === (user.tokenVersion ?? 0)) {
+        return res.json({ status: true, user: user.username });
+      }
       return res.json({ status: false });
     } catch (dbErr) {
       console.error(dbErr);
@@ -49,22 +53,24 @@ export const userVerification = (req: Request, res: Response): void => {
 };
 
 // Route GUARD for protected data endpoints. On success calls next();
-// otherwise responds 401. Accepts the token from the cookie, an
-// Authorization: Bearer header, or a ?token= query param (the dashboard
-// lives on a different origin, so the header/query fallbacks matter).
+// otherwise responds 401. Accepts the token from the cookie or an
+// Authorization: Bearer header — the dashboard lives on a different origin,
+// so the backend-domain cookie never arrives cross-origin and the header is
+// what carries the token in production. We deliberately do NOT read the token
+// from the URL/query string: query params leak into access logs, proxy logs,
+// browser history, and Referer headers.
 export const verifyToken = (req: Request, res: Response, next: NextFunction): void => {
   const bearer = req.headers.authorization;
   const token =
     req.cookies.token ||
-    (bearer && bearer.startsWith("Bearer ") ? bearer.slice(7) : null) ||
-    (typeof req.query.token === "string" ? req.query.token : null);
+    (bearer && bearer.startsWith("Bearer ") ? bearer.slice(7) : null);
 
   if (!token) {
     res.status(401).json({ status: false, message: "No token provided" });
     return;
   }
 
-  jwt.verify(token, process.env.TOKEN_KEY as string, async (err: VerifyErrors | null, data: JwtVerifyResult) => {
+  jwt.verify(token, process.env.TOKEN_KEY as string, { algorithms: ["HS256"] }, async (err: VerifyErrors | null, data: JwtVerifyResult) => {
     if (err) {
       return res.status(401).json({ status: false, message: "Invalid or expired token" });
     }
@@ -73,6 +79,11 @@ export const verifyToken = (req: Request, res: Response, next: NextFunction): vo
       const user = await UserModel.findById(payload.id);
       if (!user) {
         return res.status(401).json({ status: false, message: "User not found" });
+      }
+      // Reject tokens issued before the user's version was bumped (revocation).
+      // Missing on either side means 0 — legacy users/tokens predate the field.
+      if ((payload.tv ?? 0) !== (user.tokenVersion ?? 0)) {
+        return res.status(401).json({ status: false, message: "Invalid or expired token" });
       }
       req.user = user; // make the authenticated user available downstream
       next();

@@ -23,9 +23,10 @@ function Login() {
       if (data.success) {
         toast.success(data.message);
         setTimeout(() => {
-          // The dashboard runs on a different origin and cannot read the
-          // cookie set for this origin, so hand the token over in the URL.
-          window.location.href = `${DASHBOARD_URL}?token=${data.token}`;
+          // The login response already set the auth cookie (sameSite:none in
+          // production, shared localhost domain in dev), so the dashboard is
+          // authenticated the moment it loads — no token in the URL.
+          window.location.href = DASHBOARD_URL;
         }, 1000);
       } else {
         toast.error(data.message);
@@ -43,11 +44,39 @@ function Login() {
 
   return (
     <div className="auth-wrapper">
-      <div className="auth-card">
-        <h2>Login</h2>
-        <p className="auth-subtitle">Welcome back. Sign in to your account.</p>
+      <div className="auth-split">
+        <aside className="auth-aside">
+          <span className="auth-brand">
+            <img src="/media/images/logo.svg" alt="BlueChip" />
+          </span>
+          <h1 className="auth-headline">
+            Welcome back to <span className="accent">BlueChip.</span>
+          </h1>
+          <p className="auth-blurb">
+            Pick up where you left off — your positions, orders, and portfolio
+            are exactly as you left them, at live Gemini prices.
+          </p>
+          <ul className="auth-points">
+            <li>
+              <span className="tick">✓</span>
+              Live prices streaming from Gemini
+            </li>
+            <li>
+              <span className="tick">✓</span>
+              Real order mechanics, honest P&amp;L
+            </li>
+            <li>
+              <span className="tick">✓</span>
+              Zero real money at risk, ever
+            </li>
+          </ul>
+        </aside>
 
-        <form onSubmit={handleSubmit}>
+        <div className="auth-card">
+          <h2>Login</h2>
+          <p className="auth-subtitle">Welcome back. Sign in to your account.</p>
+
+          <form onSubmit={handleSubmit}>
           <div className="mb-3">
             <label className="form-label" htmlFor="email">
               Email
@@ -85,7 +114,8 @@ function Login() {
           <span className="auth-switch">
             Don't have an account? <Link to="/signup">Sign up</Link>
           </span>
-        </form>
+          </form>
+        </div>
       </div>
       <ToastContainer position="top-right" autoClose={2500} />
     </div>

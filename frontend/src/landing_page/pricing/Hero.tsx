@@ -10,7 +10,7 @@ function Hero() {
         </h1>
         <p className="section-lede mx-auto">
           No commissions, no subscriptions, no deposits — every account
-          trades a $100,000 simulated balance at live market prices
+          trades on a shared Gemini sandbox balance at live market prices
         </p>
       </div>
       <div className="section">
@@ -49,14 +49,14 @@ function Hero() {
             <div className="panel h-100">
               <img
                 src="/media/images/pricingZero.svg"
-                alt="Simulated funds"
+                alt="Sandbox funds"
                 className="mb-3"
               />
-              <h2 className="fs-4 mb-3">What is simulated</h2>
+              <h2 className="fs-4 mb-3">What isn't real</h2>
               <p className="text-muted mb-0">
-                Your money. Every account starts with $100,000 of practice
-                funds, and you can reset back to that any time from the
-                dashboard.
+                The money. Every account trades against one shared Gemini
+                sandbox balance — real order mechanics, test funds, zero real
+                money at risk.
               </p>
             </div>
           </div>

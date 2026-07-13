@@ -398,6 +398,32 @@ input:focus-visible {
   color: var(--ink-2);
 }
 
+.profile-dropdown {
+  margin-top: 6px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.profile-dropdown .logout-btn {
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.profile-dropdown .logout-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 /* ============================================================
    Shell layout
    ============================================================ */

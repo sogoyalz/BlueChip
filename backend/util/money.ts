@@ -1,12 +1,8 @@
-// Money and quantity helpers for the paper-trading engine.
+// Money and quantity helpers shared by order validation and the Gemini
+// sandbox order client.
 //
 // All USD amounts are rounded to 2dp and all asset quantities to 8dp at
-// every mutation boundary so floating-point drift never accumulates in
-// the database. Balances are only ever changed via conditional $inc
-// updates (never user.save()), so these helpers are the single place
-// rounding happens.
-
-export const STARTING_CASH = 100_000;
+// every mutation boundary so floating-point drift never accumulates.
 
 // A sell of "everything" can leave ~1e-12 behind after float math; any
 // holding at or below this is considered dust and gets cleaned up.
@@ -24,16 +20,15 @@ export function roundQty(n: number): number {
   return Math.round(n * 1e8) / 1e8 + 0;
 }
 
-/**
- * New weighted-average cost after buying `buyQty` at `price` on top of an
- * existing position of `prevQty` at `prevAvg`.
- */
-export function weightedAvgCost(
-  prevQty: number,
-  prevAvg: number,
-  buyQty: number,
-  price: number
-): number {
-  if (prevQty <= 0) return price;
-  return (prevQty * prevAvg + buyQty * price) / (prevQty + buyQty);
+// Integer-cents helpers for STORED/AGGREGATED money (portfolio value, cash
+// balance). Summing many float dollar amounts drifts sub-cent; summing integer
+// cents does not. Snapshots persist cents; the API converts back to dollars at
+// the edge. (Order *prices* — limitPrice/fillPrice — stay decimal: they mirror
+// Gemini's own decimal price model and are the exchange's to be the ledger of.)
+export function toCents(usd: number): number {
+  return Math.round(usd * 100);
+}
+
+export function fromCents(cents: number): number {
+  return cents / 100;
 }

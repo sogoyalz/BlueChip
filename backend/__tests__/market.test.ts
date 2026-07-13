@@ -3,8 +3,8 @@
  * with its TTL cache.
  */
 jest.mock("../model/UserModel", () => ({ UserModel: {} }));
-jest.mock("../model/HoldingsModel", () => ({ HoldingsModel: {} }));
 jest.mock("../model/OrdersModel", () => ({ OrdersModel: {} }));
+jest.mock("../services/geminiPrivate", () => ({ getGeminiBalances: jest.fn() }));
 jest.mock("../services/gemini", () => ({
   ...jest.requireActual("../services/gemini"),
   fetchCandles: jest.fn(),

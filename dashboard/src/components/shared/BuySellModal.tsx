@@ -1,7 +1,6 @@
-import React, { useState, useContext, useEffect } from "react";
+import React, { useState, useContext, useEffect, useRef } from "react";
 
 import axios from "axios";
-import { useCookies } from "react-cookie";
 import { toast } from "react-toastify";
 
 import GeneralContext from "../GeneralContext";
@@ -33,7 +32,11 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
 
   const generalContext = useContext(GeneralContext);
   const { prices, symbols } = usePrices();
-  const [cookies] = useCookies(["token"]);
+
+  // Idempotency key for the in-flight submission. Generated on first submit,
+  // reused across retries (so a retry after a slow-but-successful request
+  // doesn't place a second order), cleared once an order is accepted.
+  const clientOrderIdRef = useRef<string | null>(null);
 
   const isBuy = mode === "BUY";
   const livePrice = prices[uid]?.price;
@@ -41,15 +44,13 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
 
   // Show available cash so the user knows what they can afford.
   useEffect(() => {
-    if (!cookies.token) return;
     axios
       .get<Account>(`${API_URL}/api/account`, {
-        params: { token: cookies.token },
         withCredentials: true,
       })
       .then((res) => setBalance(res.data.balance))
       .catch((err) => console.error("Failed to load balance:", err));
-  }, [cookies.token]);
+  }, []);
 
   const numQty = Number(qty);
   const numLimit = Number(limitPrice);
@@ -77,6 +78,13 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
       return;
     }
     setSubmitting(true);
+    // One key per submission, stable across retries of that submission.
+    if (!clientOrderIdRef.current) {
+      clientOrderIdRef.current =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
     try {
       const { data } = await axios.post<{ order: Order }>(
         `${API_URL}/api/orders`,
@@ -85,13 +93,16 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
           side: mode,
           type: orderType,
           qty: numQty,
+          clientOrderId: clientOrderIdRef.current,
           ...(orderType === "LIMIT" ? { limitPrice: numLimit } : {}),
         },
         {
-          params: { token: cookies.token },
           withCredentials: true,
         }
       );
+      // The server responded with an order outcome — this attempt is done, so
+      // the next submission is a genuinely new order and needs a fresh key.
+      clientOrderIdRef.current = null;
       const order = data.order;
       if (order.status === "FILLED") {
         toast.success(
@@ -113,7 +124,9 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
         ? err.response?.data?.message
         : undefined;
       toast.error(message || "Failed to place order. Please try again.");
-      // keep the window open so the user can retry
+      // Keep the window open AND keep clientOrderIdRef so a retry reuses the
+      // same key — if the first attempt actually reached the exchange, the
+      // retry dedupes instead of placing a second order.
     } finally {
       setSubmitting(false);
     }

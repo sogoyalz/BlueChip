@@ -12,7 +12,9 @@ import {
   removeClient,
   clientCount,
   broadcastPrices,
+  sendKeepAlive,
   stopSseBroadcast,
+  MAX_STREAMS_PER_IP,
 } from "../services/sse";
 import { setPrice, clearCache } from "../services/priceFeed";
 
@@ -52,6 +54,41 @@ describe("client lifecycle", () => {
   });
 });
 
+describe("per-IP connection cap", () => {
+  test("accepts up to MAX_STREAMS_PER_IP then rejects further streams from that IP", () => {
+    for (let i = 0; i < MAX_STREAMS_PER_IP; i++) {
+      expect(addClient(fakeRes(), "1.2.3.4")).toBe(true);
+    }
+    // One past the cap is rejected and not registered.
+    expect(addClient(fakeRes(), "1.2.3.4")).toBe(false);
+    expect(clientCount()).toBe(MAX_STREAMS_PER_IP);
+    // A different IP is unaffected.
+    expect(addClient(fakeRes(), "5.6.7.8")).toBe(true);
+  });
+
+  test("removeClient frees the IP's slot so a new stream is accepted", () => {
+    const streams = Array.from({ length: MAX_STREAMS_PER_IP }, () => fakeRes());
+    streams.forEach((r) => addClient(r, "9.9.9.9"));
+    expect(addClient(fakeRes(), "9.9.9.9")).toBe(false); // at cap
+    removeClient(streams[0]);
+    expect(addClient(fakeRes(), "9.9.9.9")).toBe(true); // slot freed
+  });
+});
+
+describe("sendKeepAlive", () => {
+  test("writes a comment frame to every client and reaps dead ones", () => {
+    const alive = fakeRes();
+    const dead = { write: jest.fn() } as unknown as Response;
+    addClient(alive, "a");
+    addClient(dead, "b");
+    // Make the dead socket start failing only on the keep-alive write.
+    (dead.write as jest.Mock).mockImplementation(() => { throw new Error("EPIPE"); });
+    sendKeepAlive();
+    expect((alive.write as jest.Mock).mock.calls.some((c) => c[0] === ": keep-alive\n\n")).toBe(true);
+    expect(clientCount()).toBe(1); // dead one reaped
+  });
+});
+
 describe("broadcastPrices", () => {
   test("pushes the current cache to every client", () => {
     const a = fakeRes();
@@ -75,5 +112,18 @@ describe("broadcastPrices", () => {
     broadcastPrices();
     expect(clientCount()).toBe(1);
     expect((alive.write as jest.Mock).mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("reaping a dead socket frees its IP slot (regression: perIp leak)", () => {
+    const streams = Array.from({ length: MAX_STREAMS_PER_IP }, () => fakeRes());
+    streams.forEach((r) => addClient(r, "7.7.7.7"));
+    // One socket dies after registration; the broadcast write fails.
+    (streams[0].write as jest.Mock).mockImplementation(() => {
+      throw new Error("EPIPE");
+    });
+    broadcastPrices();
+    expect(clientCount()).toBe(MAX_STREAMS_PER_IP - 1);
+    // The freed slot must be reusable — before the fix it leaked forever.
+    expect(addClient(fakeRes(), "7.7.7.7")).toBe(true);
   });
 });

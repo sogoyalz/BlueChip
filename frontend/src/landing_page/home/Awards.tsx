@@ -14,28 +14,29 @@ function Awards() {
           </div>
         </div>
         <div className="col-md-6 ps-md-5">
-          <span className="eyebrow">The real thing, simulated</span>
+          <span className="eyebrow">The real thing, sandboxed</span>
           <h2 className="section-title mb-3">
-            Everything a real exchange has — minus the risk
+            A real exchange, minus the risk
           </h2>
           <p className="section-lede mb-4">
-            BlueChip mirrors how a real crypto exchange works: live market
-            data, real order types, a matching engine, and honest
-            profit-and-loss accounting. The only simulated part is the money.
+            BlueChip isn't a simulation bolted onto fake data — orders place
+            for real on Gemini's sandbox exchange: live market data, real
+            order types, real matching, real fills. The only thing that
+            isn't real is the money.
           </p>
           <div className="row">
             <div className="col-md-6">
               <ul className="checklist">
                 <li>Live Gemini prices</li>
                 <li>Market &amp; limit orders</li>
-                <li>Order-matching engine</li>
+                <li>Real Gemini sandbox fills</li>
               </ul>
             </div>
             <div className="col-md-6">
               <ul className="checklist">
                 <li>Candlestick charts</li>
-                <li>Trader leaderboard</li>
-                <li>$100k practice balance</li>
+                <li>Live order book depth</li>
+                <li>Zero real money, ever</li>
               </ul>
             </div>
           </div>

@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
-import { useCookies } from "react-cookie";
 import { toast } from "react-toastify";
 
 import DataTable, { Column } from "./shared/DataTable";
 import EmptyState from "./shared/EmptyState";
-import PnLValue from "./shared/PnLValue";
 import { Order, OrderStatus } from "../types";
 import { API_URL } from "../config";
 
@@ -17,6 +15,7 @@ const fmt = (n: number | undefined) =>
 
 const STATUS_CLASS: Record<OrderStatus, string> = {
   FILLED: "filled",
+  PARTIALLY_FILLED: "filled",
   OPEN: "open",
   CANCELLED: "cancelled",
   REJECTED: "rejected",
@@ -25,46 +24,39 @@ const STATUS_CLASS: Record<OrderStatus, string> = {
 const Orders = () => {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cookies] = useCookies(["token"]);
   const navigate = useNavigate();
 
-  const fetchOrders = useCallback(
-    (showSpinner: boolean) => {
-      if (!cookies.token) return;
-      if (showSpinner) setLoading(true);
-      axios
-        .get<Order[]>(`${API_URL}/api/orders`, {
-          params: { token: cookies.token },
-          withCredentials: true,
-        })
-        .then((res) => setAllOrders(res.data))
-        .catch((err) => {
-          console.error("Failed to load orders:", err);
-          if (showSpinner) toast.error("Could not load orders.");
-        })
-        .finally(() => {
-          if (showSpinner) setLoading(false);
-        });
-    },
-    [cookies.token]
-  );
+  const fetchOrders = useCallback((showSpinner: boolean) => {
+    if (showSpinner) setLoading(true);
+    axios
+      .get<Order[]>(`${API_URL}/api/orders`, {
+        withCredentials: true,
+      })
+      .then((res) => setAllOrders(res.data))
+      .catch((err) => {
+        console.error("Failed to load orders:", err);
+        if (showSpinner) toast.error("Could not load orders.");
+      })
+      .finally(() => {
+        if (showSpinner) setLoading(false);
+      });
+  }, []);
 
   useEffect(() => {
-    // During the ?token= login handoff the first render has no cookie yet;
-    // stay in the loading state until Home.tsx stores it and this re-runs.
-    if (!cookies.token) return;
+    // Auth rides the httpOnly cookie; this component only mounts once the
+    // session is verified, so no per-render token guard is needed.
     fetchOrders(true);
-    // Quiet refresh so limit fills by the matcher show up while watching.
+    // Quiet refresh so limit fills show up while watching.
     const timer = setInterval(() => fetchOrders(false), 10000);
     return () => clearInterval(timer);
-  }, [cookies.token, fetchOrders]);
+  }, [fetchOrders]);
 
   const handleCancel = async (order: Order) => {
     try {
       await axios.post(
         `${API_URL}/api/orders/${order._id}/cancel`,
         {},
-        { params: { token: cookies.token }, withCredentials: true }
+        { withCredentials: true }
       );
       toast.success(`Cancelled ${order.symbol} limit order`);
     } catch (err) {
@@ -98,16 +90,6 @@ const Orders = () => {
           : o.type === "LIMIT"
             ? `${fmt(o.limitPrice)} (limit)`
             : "—",
-    },
-    {
-      key: "pnl",
-      label: "Realized P&L",
-      render: (o) =>
-        o.side === "SELL" && o.status === "FILLED" && o.realizedPnl !== undefined ? (
-          <PnLValue value={o.realizedPnl} showArrow />
-        ) : (
-          "—"
-        ),
     },
     {
       key: "status",

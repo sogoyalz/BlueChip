@@ -4,8 +4,6 @@ import { Route, Routes } from "react-router-dom";
 import Apps from "./App";
 import Funds from "./Funds";
 import Holdings from "./Holdings";
-
-import Leaderboard from "./Leaderboard";
 import MarketDetail from "./MarketDetail";
 import Orders from "./Orders";
 import Summary from "./Summary";
@@ -24,7 +22,6 @@ const Dashboard = () => {
             <Route path="/" element={<Summary />} />
             <Route path="/orders" element={<Orders />} />
             <Route path="/holdings" element={<Holdings />} />
-            <Route path="/leaderboard" element={<Leaderboard />} />
             <Route path="/funds" element={<Funds />} />
             <Route path="/market/:symbol" element={<MarketDetail />} />
             <Route path="/apps" element={<Apps />} />
