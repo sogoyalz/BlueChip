@@ -6,6 +6,7 @@ import { SYMBOLS, isSupported } from "../config/symbols";
 import { getAllPrices } from "../services/priceFeed";
 import { getDepth } from "../services/orderBook";
 import { addClient, removeClient } from "../services/sse";
+import { marketLimiter } from "../middlewares/rateLimit";
 import {
   CANDLE_TIMEFRAMES,
   Candle,
@@ -34,14 +35,19 @@ router.get("/api/stream", (req, res) => {
   });
   res.flushHeaders();
   res.write("retry: 5000\n\n"); // EventSource reconnect hint
-  addClient(res);
+  // Cap concurrent streams per IP so one client can't exhaust server sockets.
+  if (!addClient(res, req.ip)) {
+    res.write("event: error\ndata: too many streams\n\n");
+    res.end();
+    return;
+  }
   req.on("close", () => removeClient(res));
 });
 
 // Top of the live order book, maintained from Gemini's l2 WebSocket feed.
 // Empty sides simply mean the WS hasn't (re)connected yet — the dashboard
 // hides the panel rather than erroring.
-router.get("/api/book/:symbol", (req, res) => {
+router.get("/api/book/:symbol", marketLimiter, (req, res) => {
   const symbol = String(req.params.symbol).toUpperCase();
   if (!isSupported(symbol)) {
     res.status(400).json({ message: "Unknown or unsupported symbol" });
@@ -56,7 +62,7 @@ const SHORT_TTL_MS = 60_000; // <= 30m candles
 const LONG_TTL_MS = 300_000; // 1hr+ candles
 const candleCache = new Map<string, { candles: Candle[]; fetchedAt: number }>();
 
-router.get("/api/candles/:symbol", async (req, res) => {
+router.get("/api/candles/:symbol", marketLimiter, async (req, res) => {
   const symbol = String(req.params.symbol).toUpperCase();
   const timeframe = String(req.query.timeframe || "1hr") as CandleTimeframe;
 
@@ -91,7 +97,7 @@ router.get("/api/candles/:symbol", async (req, res) => {
       res.json({ symbol, timeframe, candles: cached.candles });
       return;
     }
-    res.status(502).json({ message: "Could not fetch candles from Gemini" });
+    res.status(502).json({ message: "Could not fetch candle data — try again shortly" });
   }
 });
 

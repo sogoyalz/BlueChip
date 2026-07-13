@@ -1,8 +1,10 @@
 # Render Blueprint — deploys the backend as a free web service.
 # One-time setup: dashboard.render.com → New → Blueprint → select this repo.
-# You'll be prompted for the two sync:false env vars:
-#   MONGO_URL     — the MongoDB Atlas connection string
-#   CORS_ORIGINS  — comma-separated Netlify URLs of the two frontends
+# You'll be prompted for the sync:false env vars:
+#   MONGO_URL          — the MongoDB Atlas connection string
+#   CORS_ORIGINS       — comma-separated Netlify URLs of the two frontends
+#   GEMINI_API_KEY      — Gemini SANDBOX trading API key (exchange.sandbox.gemini.com)
+#   GEMINI_API_SECRET   — Gemini SANDBOX trading API secret
 services:
   - type: web
     name: bluechip-backend
@@ -18,4 +20,8 @@ services:
       - key: TOKEN_KEY
         generateValue: true
       - key: CORS_ORIGINS
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_API_SECRET
         sync: false

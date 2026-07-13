@@ -7,7 +7,7 @@ describe('Awards Component', () => {
     test("renders the heading", () => {
         render(<Awards />);
         expect(
-            screen.getByText('Everything a real exchange has — minus the risk')
+            screen.getByText('A real exchange, minus the risk')
         ).toBeInTheDocument();
     });
 
@@ -15,6 +15,6 @@ describe('Awards Component', () => {
         render(<Awards />);
         expect(screen.getByText('Live Gemini prices')).toBeInTheDocument();
         expect(screen.getByText('Market & limit orders')).toBeInTheDocument();
-        expect(screen.getByText('$100k practice balance')).toBeInTheDocument();
+        expect(screen.getByText('Zero real money, ever')).toBeInTheDocument();
     });
 });

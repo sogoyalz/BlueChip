@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
 import axios from "axios";
-import { useCookies } from "react-cookie";
 import { toast } from "react-toastify";
 
 import PnLValue from "./shared/PnLValue";
@@ -18,8 +17,6 @@ const fmt$ = (n: number, dp = 2) =>
 const signed$ = (n: number, dp = 2) => (n >= 0 ? "+" : "-") + fmt$(n, dp);
 const fmtPct = (p: number) => (p >= 0 ? "+" : "") + p.toFixed(2) + "%";
 
-const STARTING_CASH = 100000;
-
 const RANGES = ["1D", "1W", "1M", "ALL"] as const;
 
 interface HistoryPoint {
@@ -32,63 +29,53 @@ const CW = 760;
 const CH = 260;
 
 const Summary = () => {
-  const [allHoldings, setAllHoldings] = useState<Holding[]>([]);
+  const [holdings, setHoldings] = useState<Holding[]>([]);
   const [account, setAccount] = useState<Account | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
-  const [cookies] = useCookies(["token"]);
 
   useEffect(() => {
-    // During the ?token= login handoff the first render has no cookie yet;
-    // fetching then would just toast an error. The effect re-runs once
-    // Home.tsx stores the cookie.
-    if (!cookies.token) return;
-    const opts = { params: { token: cookies.token }, withCredentials: true };
+    // Auth rides the httpOnly cookie; this component mounts only after the
+    // session is verified.
+    const opts = { withCredentials: true };
     axios
-      .get<Holding[]>(`${API_URL}/allHoldings`, opts)
-      .then((res) => setAllHoldings(res.data))
+      .get<Holding[]>(`${API_URL}/api/holdings`, opts)
+      .then((res) => setHoldings(res.data))
       .catch((err) => {
         console.error("Failed to load holdings summary:", err);
-        toast.error("Could not load holdings summary.");
+        // toastId dedupes so a retry / StrictMode double-mount can't stack
+        // two identical error toasts.
+        toast.error("Could not load holdings summary.", {
+          toastId: "holdings-summary-error",
+        });
       });
     axios
       .get<Account>(`${API_URL}/api/account`, opts)
       .then((res) => setAccount(res.data))
       .catch((err) => console.error("Failed to load account:", err));
-  }, [cookies.token]);
+  }, []);
 
   useEffect(() => {
-    if (!cookies.token) return;
     axios
       .get<{ points: HistoryPoint[] }>(`${API_URL}/api/portfolio/history`, {
-        params: { token: cookies.token, range },
+        params: { range },
         withCredentials: true,
       })
       .then((res) => setHistory(res.data.points))
       .catch((err) => console.error("Failed to load portfolio history:", err));
-  }, [cookies.token, range]);
+  }, [range]);
 
-  const investment = allHoldings.reduce(
-    (sum, h) => sum + h.avgCost * h.qty,
-    0
-  );
-  const currentValue = allHoldings.reduce(
-    (sum, h) => sum + (h.price ?? h.avgCost) * h.qty,
-    0
-  );
+  const currentValue = holdings.reduce((sum, h) => sum + (h.price ?? 0) * h.qty, 0);
 
   // Today's move, approximated from each holding's 24h-change percentage.
-  const dayPL = allHoldings.reduce(
-    (sum, h) =>
-      sum + (h.price ?? h.avgCost) * h.qty * ((h.dayChangePct ?? 0) / 100),
+  const dayPL = holdings.reduce(
+    (sum, h) => sum + (h.price ?? 0) * h.qty * ((h.dayChangePct ?? 0) / 100),
     0
   );
   const dayPct = currentValue > 0 ? (dayPL / (currentValue - dayPL)) * 100 : 0;
 
   const balance = account?.balance ?? 0;
   const portfolioValue = account?.portfolioValue ?? currentValue + balance;
-  const totalReturn = portfolioValue - STARTING_CASH;
-  const totalReturnPct = (totalReturn / STARTING_CASH) * 100;
 
   // Real snapshot history; a brand-new account renders a flat baseline.
   const chart = useMemo(() => {
@@ -131,7 +118,7 @@ const Summary = () => {
         <StatCard
           label="Portfolio value"
           delta={<PnLValue text={fmtPct(dayPct)} />}
-          sub="cash + holdings"
+          sub="shared account: cash + holdings"
         >
           {fmt$(portfolioValue, 0)}
         </StatCard>
@@ -141,13 +128,6 @@ const Summary = () => {
           sub="unrealized, 24h"
         >
           {signed$(dayPL, 0)}
-        </StatCard>
-        <StatCard
-          label="Total return"
-          delta={<PnLValue text={fmtPct(totalReturnPct)} showArrow />}
-          sub="since you started"
-        >
-          {signed$(totalReturn, 0)}
         </StatCard>
         <StatCard label="Buying power" sub="available cash">
           {fmt$(balance, 0)}

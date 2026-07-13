@@ -290,6 +290,83 @@ a:focus-visible {
   background: transparent;
 }
 
+/* Two-column auth: a brand/value panel beside the form, so the page reads
+   like a product rather than a lone card in a void. Collapses to just the
+   form on narrow screens. */
+.auth-split {
+  width: 100%;
+  max-width: 940px;
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  gap: 48px;
+  align-items: center;
+}
+
+.auth-aside {
+  min-width: 0;
+}
+
+.auth-aside .auth-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+
+.auth-aside .auth-brand img {
+  height: 30px;
+}
+
+.auth-aside .auth-headline {
+  font-size: clamp(1.9rem, 3.2vw, 2.6rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin: 0 0 16px;
+}
+
+.auth-aside .auth-headline .accent {
+  color: var(--accent);
+}
+
+.auth-aside .auth-blurb {
+  color: var(--ink-2);
+  font-size: 1rem;
+  line-height: 1.6;
+  margin: 0 0 28px;
+  max-width: 42ch;
+}
+
+.auth-aside .auth-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.auth-aside .auth-points li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--ink-2);
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
+.auth-aside .auth-points .tick {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 200, 83, 0.12);
+  color: var(--gain);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .auth-card {
   width: 100%;
   max-width: 420px;
@@ -675,6 +752,19 @@ select:focus-visible {
 
   .section {
     padding-block: var(--sp-12);
+  }
+}
+
+/* Below the two-column width, drop the brand panel and center the form. */
+@media (max-width: 900px) {
+  .auth-split {
+    grid-template-columns: 1fr;
+    max-width: 420px;
+    gap: 0;
+  }
+
+  .auth-aside {
+    display: none;
   }
 }
 
