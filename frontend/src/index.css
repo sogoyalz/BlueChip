@@ -809,3 +809,175 @@ select:focus-visible {
     font-size: 1.75rem;
   }
 }
+
+/* ============================================================
+   Motion — scroll reveals, hero entrance, ticker flash.
+   All effects are opt-out under prefers-reduced-motion.
+   ============================================================ */
+
+/* Scroll-reveal: sections lift + fade the first time they enter view.
+   The wrapper starts translated/transparent; the .reveal--in class
+   (added by the Reveal component's IntersectionObserver) settles it. */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.reveal--in {
+  opacity: 1;
+  transform: none;
+}
+
+/* Hero: staggered entrance on first paint (no scrolling required). */
+@keyframes bc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.hero-animate > * {
+  opacity: 0;
+  animation: bc-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.hero-animate > *:nth-child(1) {
+  animation-delay: 0.05s;
+}
+.hero-animate > *:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.hero-animate > *:nth-child(3) {
+  animation-delay: 0.25s;
+}
+.hero-animate > *:nth-child(4) {
+  animation-delay: 0.35s;
+}
+.hero-animate > *:nth-child(5) {
+  animation-delay: 0.45s;
+}
+
+/* Live ticker pills — previously unstyled. Give them a proper compact
+   look, a hover lift, and a colored change indicator. */
+.ticker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.ticker-pill:hover {
+  transform: translateY(-2px);
+  border-color: var(--ink-3);
+}
+
+.ticker-pill strong {
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+.ticker-up {
+  color: var(--gain);
+  font-weight: 500;
+}
+
+.ticker-down {
+  color: var(--loss);
+  font-weight: 500;
+}
+
+/* A single soft pulse when a pill's price changes, keyed off a
+   data attribute the component toggles per update. */
+@keyframes bc-flash-up {
+  0% {
+    box-shadow: 0 0 0 0 rgba(0, 200, 83, 0);
+  }
+  30% {
+    box-shadow: 0 0 0 3px rgba(0, 200, 83, 0.28);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 200, 83, 0);
+  }
+}
+
+@keyframes bc-flash-down {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 82, 82, 0);
+  }
+  30% {
+    box-shadow: 0 0 0 3px rgba(255, 82, 82, 0.28);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 82, 82, 0);
+  }
+}
+
+.ticker-pill[data-flash="up"] {
+  animation: bc-flash-up 0.9s ease-out;
+}
+
+.ticker-pill[data-flash="down"] {
+  animation: bc-flash-down 0.9s ease-out;
+}
+
+/* Buttons get a gentle lift so primary CTAs feel tactile. */
+.btn-primary,
+.btn-ghost {
+  transition: background 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-ghost:hover {
+  transform: translateY(-1px);
+}
+
+/* Illustration frames breathe subtly on hover. */
+.img-frame {
+  transition: border-color 0.25s ease, transform 0.25s ease;
+}
+
+.img-frame:hover {
+  transform: translateY(-3px);
+  border-color: var(--ink-3);
+}
+
+/* Respect users who ask for less motion: no reveals, no entrance,
+   no flashes, no hover lifts — everything renders in its rest state. */
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal--in {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .hero-animate > * {
+    opacity: 1;
+    animation: none;
+  }
+
+  .ticker-pill[data-flash="up"],
+  .ticker-pill[data-flash="down"] {
+    animation: none;
+  }
+
+  .btn-primary:hover:not(:disabled),
+  .btn-ghost:hover,
+  .img-frame:hover,
+  .ticker-pill:hover {
+    transform: none;
+  }
+}

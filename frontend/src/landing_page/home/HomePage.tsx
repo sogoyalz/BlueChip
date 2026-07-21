@@ -6,17 +6,28 @@ import Education from "./Education";
 import Pricing from "./Pricing";
 import Stats from "./Stats";
 import OpenAccount from "../OpenAccount";
+import Reveal from "../Reveal";
 
 function HomePage() {
   return (
     <>
       <Hero />
       <LiveTicker />
-      <Awards />
-      <Stats />
-      <Pricing />
-      <Education />
-      <OpenAccount />
+      <Reveal>
+        <Awards />
+      </Reveal>
+      <Reveal>
+        <Stats />
+      </Reveal>
+      <Reveal>
+        <Pricing />
+      </Reveal>
+      <Reveal>
+        <Education />
+      </Reveal>
+      <Reveal>
+        <OpenAccount />
+      </Reveal>
     </>
   );
 }
