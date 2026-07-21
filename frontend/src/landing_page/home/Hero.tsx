@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 function Hero() {
   return (
-    <div className="container section text-center">
+    <div className="container section text-center hero-animate">
       <span className="eyebrow eyebrow--accent">BlueChip</span>
       <h1 className="hero-title mb-3">
         Trade crypto for real — with none of the risk.
