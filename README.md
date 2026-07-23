@@ -105,8 +105,16 @@ Each app uses a `.env` file (never committed — see `.env.example` for the temp
 MONGO_URL=your_mongodb_connection_string
 TOKEN_KEY=your_jwt_secret
 PORT=3002
+NODE_ENV=production
 # Production only: comma-separated allowed browser origins
 # CORS_ORIGINS=https://your-landing.netlify.app,https://your-dashboard.netlify.app
+#
+# NOTE: the auth cookie is sameSite:"lax", which requires the backend and
+# both frontends to share ONE registrable domain (e.g. api./app./www.yoursite.com).
+# If you deploy to the default *.onrender.com / *.netlify.app domains instead,
+# the cookie won't be sent cross-site and login will silently fail. Either set
+# up custom subdomains on one domain, or change sameSite to "none" in
+# backend/controllers/AuthController.ts before deploying.
 
 # Gemini SANDBOX trading credentials — register at
 # https://exchange.sandbox.gemini.com/ and create an API key with Trading

@@ -296,3 +296,75 @@ describe("GET /api/account", () => {
     expect(res.body.balance).toBe(100000);
   });
 });
+
+describe("verifyToken edge cases (via GET /api/account)", () => {
+  test("rejects an expired token with 401 (distinct code path from tampering, same message)", async () => {
+    const expired = jwt.sign(
+      { id: "user-1", tv: 0 },
+      process.env.TOKEN_KEY as string,
+      { expiresIn: -1 } // already expired the instant it's signed
+    );
+    const res = await request(app)
+      .get("/api/account")
+      .set("Authorization", `Bearer ${expired}`);
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/invalid or expired/i);
+  });
+
+  test("rejects a revoked token (tokenVersion behind the stored user's) with 401", async () => {
+    mockedUserModel.findById.mockResolvedValue({ ...alice, tokenVersion: 1 });
+    const res = await request(app)
+      .get("/api/account")
+      .set("Authorization", `Bearer ${validToken()}`); // token still carries tv:0
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/invalid or expired/i);
+  });
+
+  test("rejects a well-formed but nonexistent user with 401", async () => {
+    mockedUserModel.findById.mockResolvedValue(null);
+    const res = await request(app)
+      .get("/api/account")
+      .set("Authorization", `Bearer ${validToken()}`);
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/user not found/i);
+  });
+
+  test("rejects a bare 'Bearer' header with no token with 401", async () => {
+    const res = await request(app)
+      .get("/api/account")
+      .set("Authorization", "Bearer ");
+    expect(res.status).toBe(401);
+    expect(res.body.message).toMatch(/no token provided/i);
+  });
+
+  test("returns 500 (not a crash) when the user lookup throws", async () => {
+    mockedUserModel.findById.mockRejectedValue(new Error("connection reset"));
+    const res = await request(app)
+      .get("/api/account")
+      .set("Authorization", `Bearer ${validToken()}`);
+    expect(res.status).toBe(500);
+    expect(res.body.status).toBe(false);
+  });
+});
+
+describe("POST / (session check) — findById failure", () => {
+  test("reports 500 when the DB lookup throws, rather than a fake 'logged out'", async () => {
+    mockedUserModel.findById.mockRejectedValue(new Error("connection reset"));
+    const res = await csrfPost("/")
+      .set("Cookie", [`token=${validToken()}`])
+      .send({});
+    expect(res.status).toBe(500);
+    expect(res.body.status).toBe(false);
+  });
+});
+
+describe("POST /logout", () => {
+  test("clears the auth cookie", async () => {
+    const res = await csrfPost("/logout").send({});
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const setCookie = (res.headers["set-cookie"] as unknown as string[]).join(";");
+    // clearCookie sends an already-expired cookie with the same name.
+    expect(setCookie).toMatch(/token=;/);
+  });
+});
