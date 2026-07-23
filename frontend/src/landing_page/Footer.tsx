@@ -82,9 +82,11 @@ function Footer() {
         </div>
         <div className="fine-print mt-5">
           <p>
-            BlueChip is a paper-trading simulator: all balances are
-            simulated, and no real money can be deposited, withdrawn, or put
-            at risk here. Market data is sourced from Gemini's public API.
+            BlueChip places real orders on Gemini's sandbox exchange — a
+            dedicated test environment with test funds, separate from
+            Gemini's real exchange. No real money can be deposited,
+            withdrawn, or put at risk here. Market data is sourced from
+            Gemini's public API.
           </p>
 
           <p>
@@ -94,7 +96,7 @@ function Footer() {
           </p>
 
           <p>
-            Practicing with simulated funds is a way to learn how markets
+            Practicing with sandbox funds is a way to learn how markets
             work; real trading involves real risk, including the possible
             loss of principal.
           </p>

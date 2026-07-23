@@ -1,10 +1,4 @@
-import {
-  roundUsd,
-  roundQty,
-  weightedAvgCost,
-  QTY_EPSILON,
-  STARTING_CASH,
-} from "../util/money";
+import { roundUsd, roundQty, toCents, fromCents, QTY_EPSILON } from "../util/money";
 
 describe("roundUsd", () => {
   test("rounds to 2 decimal places", () => {
@@ -30,26 +24,29 @@ describe("roundQty", () => {
   });
 });
 
-describe("weightedAvgCost", () => {
-  test("first buy sets avg to the fill price", () => {
-    expect(weightedAvgCost(0, 0, 1, 50000)).toBe(50000);
+describe("integer cents", () => {
+  test("toCents rounds to an integer number of cents", () => {
+    expect(toCents(10.005)).toBe(1001);
+    expect(toCents(10.004)).toBe(1000);
+    expect(toCents(0.1 + 0.2)).toBe(30);
   });
 
-  test("averages a second buy by quantity", () => {
-    // 1 @ 100 then 1 @ 200 → avg 150
-    expect(weightedAvgCost(1, 100, 1, 200)).toBe(150);
-    // 3 @ 10 then 1 @ 50 → (30 + 50) / 4 = 20
-    expect(weightedAvgCost(3, 10, 1, 50)).toBe(20);
+  test("fromCents is the inverse for whole cents", () => {
+    expect(fromCents(1001)).toBe(10.01);
+    expect(fromCents(9000000)).toBe(90000);
   });
 
-  test("fractional quantities average correctly", () => {
-    expect(weightedAvgCost(0.5, 40000, 0.5, 60000)).toBe(50000);
+  test("summing in cents never drifts sub-cent", () => {
+    // Summing 0.1 as a float 10 times drifts (0.9999...); in cents it's exact.
+    let cents = 0;
+    for (let i = 0; i < 10; i++) cents += toCents(0.1);
+    expect(cents).toBe(100);
+    expect(fromCents(cents)).toBe(1);
   });
 });
 
 describe("constants", () => {
-  test("starting cash and epsilon are sane", () => {
-    expect(STARTING_CASH).toBe(100000);
+  test("epsilon is sane", () => {
     expect(QTY_EPSILON).toBeGreaterThan(0);
     expect(QTY_EPSILON).toBeLessThan(1e-6);
   });

@@ -5,10 +5,10 @@ import mongoose from "mongoose";
 
 import bodyParser from "body-parser";
 import cors from "cors";
+import helmet from "helmet";
 
 import cookieParser from "cookie-parser";
 
-import { HoldingsModel } from "./model/HoldingsModel";
 import { OrdersModel } from "./model/OrdersModel";
 import { UserModel } from "./model/UserModel";
 import authRoute from "./routes/AuthRoute";
@@ -16,18 +16,38 @@ import marketRoute from "./routes/MarketRoute";
 import orderRoute from "./routes/OrderRoute";
 import portfolioRoute from "./routes/PortfolioRoute";
 import { verifyToken } from "./middlewares/AuthMiddleware";
-import { STARTING_CASH, roundUsd } from "./util/money";
+import { toCents, fromCents } from "./util/money";
 import { getPrice, startPolling } from "./services/priceFeed";
 import { startGeminiWs } from "./services/geminiWs";
-import { startMatcher } from "./services/matcher";
-import { snapshotUser, startSnapshots } from "./services/snapshots";
+import { startOrderSync } from "./services/orderSync";
+import { getGeminiBalances } from "./services/geminiPrivate";
+import { startSnapshots } from "./services/snapshots";
 import { startSseBroadcast } from "./services/sse";
 import { authLimiter, generalLimiter } from "./middlewares/rateLimit";
+import { requireCsrfHeader } from "./middlewares/csrf";
 import { isWsConnected } from "./services/geminiWs";
 import { SYMBOLS } from "./config/symbols";
 import { isFresh } from "./services/priceFeed";
 import { fetchSymbols } from "./services/gemini";
 import { validateSymbolsAgainstGemini } from "./config/symbols";
+
+// Last-resort safety nets. Several paths are fire-and-forget (void
+// snapshotNow(), timers); without these, a stray rejection would crash the
+// process under Node's default. Log and keep serving on an unhandled
+// rejection; on a truly uncaught exception the process is in an unknown
+// state, so log and exit so the host can restart cleanly.
+process.on("unhandledRejection", (reason) => {
+  console.error("[fatal] unhandledRejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[fatal] uncaughtException:", err);
+  process.exit(1);
+});
+
+// Defense-in-depth against NoSQL injection: strip $-operators from query
+// filters unless a call site explicitly wraps them in mongoose.trusted()
+// (orderSync's $in scan and the portfolio history $gte range do).
+mongoose.set("sanitizeFilter", true);
 
 const PORT = process.env.PORT || 3002;
 const uri = process.env.MONGO_URL;
@@ -38,6 +58,18 @@ const app = express();
 // rate limiter would bucket every visitor under the proxy's IP.
 app.set("trust proxy", 1);
 
+// Security headers. This is a JSON + SSE API (it never serves HTML), so a
+// content-security-policy would only risk breaking the event stream for no
+// gain; the rest of helmet's defaults (HSTS, no-sniff, frameguard, referrer
+// policy, etc.) all apply. crossOriginResourcePolicy is relaxed so the
+// separate-origin dashboard can consume responses.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
+
 const corsOrigins = (
   process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001"
 ).split(",");
@@ -46,6 +78,8 @@ app.use(
   cors({
     origin: corsOrigins,
     methods: ["GET", "POST", "PUT", "DELETE"],
+    // X-Requested-With is our CSRF header — must be allowed through preflight.
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     credentials: true, // <-- REQUIRED so cookies are allowed
   })
 );
@@ -53,28 +87,40 @@ app.use(bodyParser.json({ limit: "10kb" })); // no endpoint needs big bodies
 app.use(cookieParser());
 app.use(generalLimiter);
 
+// CSRF: every state-changing request (POST/PUT/DELETE) must carry the custom
+// header a browser only lets same-origin/CORS-permitted JS set. Safe methods
+// (GET/HEAD/OPTIONS) — public market data and the SSE stream — are unaffected.
+app.use((req, res, next) => {
+  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") {
+    return next();
+  }
+  return requireCsrfHeader(req, res, next);
+});
+
 app.use(["/signup", "/login"], authLimiter); // brute-force protection
 app.use("/", authRoute); // mounts /signup, /login, /
 app.use("/", marketRoute); // mounts /api/symbols, /api/prices (public)
 app.use("/", orderRoute); // mounts /api/orders* (auth)
-app.use("/", portfolioRoute); // mounts /api/leaderboard (auth)
+app.use("/", portfolioRoute); // mounts /api/portfolio/history (auth)
 
-app.get("/allHoldings", verifyToken, async (req, res) => {
+// The shared Gemini sandbox account's holdings — every logged-in user sees
+// the same balances, enriched with live prices from the shared cache.
+app.get("/api/holdings", verifyToken, async (_req, res) => {
   try {
-    const holdings = await HoldingsModel.find({ userId: req.user!._id });
-    // Enrich with live prices from the shared Gemini cache.
-    const enriched = holdings.map((h) => {
-      const live = getPrice(h.symbol);
-      return {
-        _id: h._id,
-        symbol: h.symbol,
-        qty: h.qty,
-        avgCost: h.avgCost,
-        price: live?.price,
-        dayChangePct: live?.changePct24h,
-      };
-    });
-    res.json(enriched);
+    const balances = await getGeminiBalances();
+    const holdings = balances
+      .filter((b) => b.currency !== "USD" && Number(b.amount) > 0)
+      .map((b) => {
+        const symbol = `${b.currency}USD`;
+        const live = getPrice(symbol);
+        return {
+          symbol,
+          qty: Number(b.amount),
+          price: live?.price,
+          dayChangePct: live?.changePct24h,
+        };
+      });
+    res.json(holdings);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Failed to fetch holdings" });
@@ -84,22 +130,22 @@ app.get("/allHoldings", verifyToken, async (req, res) => {
 app.get("/api/account", verifyToken, async (req, res) => {
   try {
     const user = req.user!;
-    const balance = roundUsd(user.balance ?? STARTING_CASH);
-    const holdings = await HoldingsModel.find({ userId: user._id });
-    let holdingsValue = 0;
-    let costBasis = 0;
-    for (const h of holdings) {
-      const live = getPrice(h.symbol);
-      holdingsValue += h.qty * (live?.price ?? h.avgCost);
-      costBasis += h.qty * h.avgCost;
+    const balances = await getGeminiBalances();
+    const usd = balances.find((b) => b.currency === "USD");
+    // Accumulate in integer cents so the portfolio total never drifts sub-cent
+    // across many holdings; convert back to dollars only for the response.
+    const balanceCents = toCents(Number(usd?.amount ?? 0));
+    let holdingsCents = 0;
+    for (const b of balances) {
+      if (b.currency === "USD") continue;
+      const live = getPrice(`${b.currency}USD`);
+      holdingsCents += toCents(Number(b.amount) * (live?.price ?? 0));
     }
     res.json({
       username: user.username,
       email: user.email,
-      balance,
-      portfolioValue: roundUsd(balance + holdingsValue),
-      realizedPnl: roundUsd(user.realizedPnl ?? 0),
-      unrealizedPnl: roundUsd(holdingsValue - costBasis),
+      balance: fromCents(balanceCents),
+      portfolioValue: fromCents(balanceCents + holdingsCents),
       createdAt: user.createdAt,
     });
   } catch (err) {
@@ -109,7 +155,7 @@ app.get("/api/account", verifyToken, async (req, res) => {
 });
 
 // Health check — also the keep-alive ping target so the free-tier host
-// doesn't sleep (which would pause the matcher and snapshots).
+// doesn't sleep (which would pause order syncing and snapshots).
 app.get("/healthz", (_req, res) => {
   res.json({
     ok: true,
@@ -118,54 +164,26 @@ app.get("/healthz", (_req, res) => {
   });
 });
 
-// Start over: wipe holdings and open orders, restore the starting balance.
-app.post("/api/account/reset", verifyToken, async (req, res) => {
-  try {
-    const userId = req.user!._id;
-    await OrdersModel.updateMany(
-      { userId, status: "OPEN" },
-      { $set: { status: "CANCELLED", reason: "Account reset" } }
-    );
-    await HoldingsModel.deleteMany({ userId });
-    await UserModel.updateOne(
-      { _id: userId },
-      { $set: { balance: STARTING_CASH, realizedPnl: 0 } }
-    );
-    void snapshotUser(userId);
-    res.json({ message: "Account reset", balance: STARTING_CASH });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to reset account" });
-  }
-});
-
-// Idempotent, runs on every boot: brings pre-rework documents up to the
-// current data model (users without a balance, holdings/orders from the
-// old global collections, the retired positions collection).
+// One-shot data-model migration for pre-rework documents. Orders/balances/
+// holdings now live on the real Gemini sandbox account, not in Mongo, so the
+// old per-user ledger collections and fields are dropped rather than migrated.
+//
+// DESTRUCTIVE: this drops collections. It must NOT run on every boot (the
+// free-tier host restarts constantly). It only runs when RUN_MIGRATIONS=true
+// is explicitly set for a deploy, then should be unset again.
 const migrate = async (): Promise<void> => {
-  const backfilled = await UserModel.updateMany(
-    { balance: { $exists: false } },
-    { $set: { balance: STARTING_CASH } }
-  );
-  if (backfilled.modifiedCount > 0) {
-    console.log(`migrate: seeded balance for ${backfilled.modifiedCount} user(s)`);
-  }
   await UserModel.updateMany(
-    { realizedPnl: { $exists: false } },
-    { $set: { realizedPnl: 0 } }
+    {},
+    { $unset: { balance: "", realizedPnl: "" } }
   );
-  const oldHoldings = await HoldingsModel.deleteMany({ userId: { $exists: false } });
-  const oldOrders = await OrdersModel.deleteMany({ userId: { $exists: false } });
-  if (oldHoldings.deletedCount || oldOrders.deletedCount) {
-    console.log(
-      `migrate: purged ${oldHoldings.deletedCount} legacy holding(s), ${oldOrders.deletedCount} legacy order(s)`
-    );
-  }
-  try {
-    await mongoose.connection.dropCollection("positions");
-    console.log("migrate: dropped legacy positions collection");
-  } catch {
-    // collection already gone — nothing to do
+  await OrdersModel.updateMany({}, { $unset: { realizedPnl: "" } });
+  for (const collection of ["positions", "holdings", "holding"]) {
+    try {
+      await mongoose.connection.dropCollection(collection);
+      console.log(`migrate: dropped legacy ${collection} collection`);
+    } catch {
+      // collection already gone — nothing to do
+    }
   }
 };
 
@@ -174,9 +192,17 @@ const start = async (): Promise<void> => {
     if (!uri) {
       throw new Error("MONGO_URL is not set");
     }
+    // A weak/short JWT secret is brute-forceable offline. Refuse to boot
+    // without a sufficiently long one rather than silently signing with it.
+    if (!process.env.TOKEN_KEY || process.env.TOKEN_KEY.length < 32) {
+      throw new Error("TOKEN_KEY is not set or is too short (need >= 32 chars)");
+    }
     await mongoose.connect(uri);
     console.log("db connected");
-    await migrate();
+    if (process.env.RUN_MIGRATIONS === "true") {
+      console.log("RUN_MIGRATIONS=true — running one-shot data-model migration");
+      await migrate();
+    }
     // Drop curated symbols Gemini no longer trades, then start the shared
     // price poller. Only when run directly — tests import app without timers.
     await validateSymbolsAgainstGemini(fetchSymbols);
@@ -184,7 +210,7 @@ const start = async (): Promise<void> => {
     // underneath at a relaxed cadence as fallback + 24h-change source.
     startGeminiWs();
     startPolling(30_000);
-    startMatcher();
+    startOrderSync();
     startSnapshots();
     startSseBroadcast();
     app.listen(PORT, () => {

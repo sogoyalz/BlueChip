@@ -11,18 +11,18 @@ function Brokerage() {
               <h3 className="fs-5 mb-4">Good to know</h3>
               <ul className="checklist fine-print mb-0">
                 <li>
-                  Fills execute at the live Gemini market price. Limit orders
-                  fill at your price or better — never worse.
+                  Orders place for real on Gemini's sandbox exchange. Limit
+                  orders fill at your price or better — never worse.
                 </li>
                 <li>
-                  Orders are rejected (never partially honored) if your
-                  simulated balance or holdings can't cover them, exactly
-                  like a real exchange would.
+                  Orders can be rejected or only partially filled if the
+                  sandbox account's balance or holdings can't cover them,
+                  exactly like a real exchange.
                 </li>
                 <li>
                   Market data is briefly delayed-safe: if the live feed goes
-                  stale, order execution pauses rather than filling on dead
-                  prices.
+                  stale, order placement pauses rather than pricing off dead
+                  data.
                 </li>
                 <li>
                   Crypto markets run 24/7 — there are no market hours,
@@ -39,8 +39,8 @@ function Brokerage() {
             <div className="panel h-100">
               <h3 className="fs-5 mb-3">Questions?</h3>
               <p className="text-muted">
-                How fills work, where prices come from, how the leaderboard
-                is ranked — the support portal covers it all.
+                How fills work, where prices come from, how the sandbox
+                account works — the support portal covers it all.
               </p>
               <Link className="link-arrow" to="/support">
                 Ask us anything

@@ -3,16 +3,21 @@
 
 export type OrderSide = "BUY" | "SELL";
 export type OrderType = "MARKET" | "LIMIT";
-export type OrderStatus = "OPEN" | "FILLED" | "CANCELLED" | "REJECTED";
+export type OrderStatus =
+  | "OPEN"
+  | "PARTIALLY_FILLED"
+  | "FILLED"
+  | "CANCELLED"
+  | "REJECTED";
 
 // Legacy alias — BuySellModal and GeneralContext predate the side/type split.
 export type TradeMode = OrderSide;
 
+// The shared Gemini sandbox account's holding in one asset — no per-user
+// cost basis, since every user trades against the same account.
 export interface Holding {
-  _id?: string;
   symbol: string;
   qty: number;
-  avgCost: number;
   // Live enrichment added by the backend from its Gemini price cache.
   price?: number;
   dayChangePct?: number;
@@ -27,7 +32,7 @@ export interface Order {
   qty: number;
   limitPrice?: number;
   fillPrice?: number;
-  realizedPnl?: number;
+  geminiOrderId?: string;
   reason?: string;
   createdAt: string;
   filledAt?: string;
@@ -38,8 +43,6 @@ export interface Account {
   email: string;
   balance: number;
   portfolioValue?: number;
-  realizedPnl?: number;
-  unrealizedPnl?: number;
   createdAt?: string;
 }
 

@@ -13,16 +13,22 @@ process.env.AUTH_RATE_MAX = "3";
 process.env.GENERAL_RATE_MAX = "10000";
 
 jest.mock("../model/UserModel", () => ({
-  UserModel: { findOne: jest.fn(), findById: jest.fn(), create: jest.fn() },
-}));
-jest.mock("../model/HoldingsModel", () => ({
-  HoldingsModel: { find: jest.fn() },
+  UserModel: {
+    findOne: jest.fn(),
+    findById: jest.fn(),
+    create: jest.fn(),
+    updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
+  },
 }));
 jest.mock("../model/OrdersModel", () => ({
-  OrdersModel: { find: jest.fn() },
+  OrdersModel: { find: jest.fn(), updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }) },
+}));
+jest.mock("../services/geminiPrivate", () => ({
+  getGeminiBalances: jest.fn().mockResolvedValue([]),
 }));
 jest.mock("../services/snapshots", () => ({
-  snapshotUser: jest.fn().mockResolvedValue(undefined),
+  snapshotNow: jest.fn().mockResolvedValue(undefined),
+  startSnapshots: jest.fn(),
 }));
 
 import { app } from "../index";
@@ -54,6 +60,7 @@ describe("signup input caps", () => {
     // consumes 1 of the 3 auth-limiter slots
     const res = await request(app)
       .post("/signup")
+      .set("X-Requested-With", "XMLHttpRequest")
       .send({
         email: "a@b.com",
         username: "x".repeat(100),
@@ -68,7 +75,10 @@ describe("auth rate limiting (runs last — shares the IP budget)", () => {
   test("hammering /login returns 429 after the limit", async () => {
     mockedUser.findOne.mockResolvedValue(null); // every attempt is a 401
     const attempt = () =>
-      request(app).post("/login").send({ email: "a@b.com", password: "x" });
+      request(app)
+        .post("/login")
+        .set("X-Requested-With", "XMLHttpRequest")
+        .send({ email: "a@b.com", password: "x" });
 
     // Slots 2 and 3 of 3.
     for (let i = 0; i < 2; i++) {

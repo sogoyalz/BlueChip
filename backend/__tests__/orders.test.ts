@@ -1,6 +1,6 @@
 /**
- * Order engine + /api/orders route tests. Models and the price feed are
- * mocked; JWT is real.
+ * Order engine + /api/orders route tests. Models, the price feed, and the
+ * Gemini sandbox client are mocked; JWT is real.
  */
 import request from "supertest";
 import jwt from "jsonwebtoken";
@@ -15,24 +15,15 @@ jest.mock("../model/UserModel", () => ({
     findOne: jest.fn(),
     findById: jest.fn(),
     create: jest.fn(),
-    updateOne: jest.fn(),
-  },
-}));
-jest.mock("../model/HoldingsModel", () => ({
-  HoldingsModel: {
-    find: jest.fn(),
-    findOne: jest.fn(),
-    findOneAndUpdate: jest.fn(),
-    updateOne: jest.fn(),
-    deleteMany: jest.fn(),
+    updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
   },
 }));
 jest.mock("../model/OrdersModel", () => ({
   OrdersModel: {
     find: jest.fn(),
     create: jest.fn(),
-    findOneAndUpdate: jest.fn(),
-    updateOne: jest.fn(),
+    findOne: jest.fn(),
+    updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
   },
 }));
 jest.mock("../services/priceFeed", () => ({
@@ -41,28 +32,39 @@ jest.mock("../services/priceFeed", () => ({
   getAllPrices: jest.fn(() => ({})),
   startPolling: jest.fn(),
 }));
+jest.mock("../services/geminiPrivate", () => ({
+  placeGeminiOrder: jest.fn(),
+  cancelGeminiOrder: jest.fn(),
+  getGeminiOrderStatus: jest.fn(),
+  getGeminiBalances: jest.fn().mockResolvedValue([]),
+  clearBalancesCache: jest.fn(),
+}));
 jest.mock("../services/snapshots", () => ({
-  snapshotUser: jest.fn().mockResolvedValue(undefined),
+  snapshotNow: jest.fn().mockResolvedValue(undefined),
+  startSnapshots: jest.fn(),
 }));
 
 import { app } from "../index";
 import { UserModel } from "../model/UserModel";
-import { HoldingsModel } from "../model/HoldingsModel";
 import { OrdersModel } from "../model/OrdersModel";
 import { getPrice, isFresh } from "../services/priceFeed";
-import { applyFillEffects } from "../services/orderEngine";
+import { placeGeminiOrder, cancelGeminiOrder } from "../services/geminiPrivate";
 
 const mockedUser = UserModel as unknown as Record<string, jest.Mock>;
-const mockedHoldings = HoldingsModel as unknown as Record<string, jest.Mock>;
 const mockedOrders = OrdersModel as unknown as Record<string, jest.Mock>;
 const mockedGetPrice = getPrice as jest.Mock;
 const mockedIsFresh = isFresh as jest.Mock;
+const mockedPlaceGeminiOrder = placeGeminiOrder as jest.Mock;
+const mockedCancelGeminiOrder = cancelGeminiOrder as jest.Mock;
 
 const token = () => jwt.sign({ id: "user-1" }, process.env.TOKEN_KEY as string);
-const alice = { _id: "user-1", username: "alice", email: "a@b.com", balance: 100000 };
+const alice = { _id: "user-1", username: "alice", email: "a@b.com" };
 
 const authedPost = () =>
-  request(app).post("/api/orders").set("Authorization", `Bearer ${token()}`);
+  request(app)
+    .post("/api/orders")
+    .set("Authorization", `Bearer ${token()}`)
+    .set("X-Requested-With", "XMLHttpRequest");
 
 /** A fake order document whose save() just records the mutation. */
 const fakeOrderDoc = (fields: object) => {
@@ -74,26 +76,46 @@ const fakeOrderDoc = (fields: object) => {
   return doc;
 };
 
+/** A Gemini order/new response, fully filled by default. */
+const geminiFill = (overrides: Partial<Record<string, unknown>> = {}) => ({
+  order_id: "gemini-1",
+  symbol: "btcusd",
+  side: "buy",
+  type: "exchange limit",
+  price: "50500",
+  avg_execution_price: "50000",
+  executed_amount: "0.1",
+  remaining_amount: "0",
+  is_live: false,
+  is_cancelled: false,
+  timestampms: Date.now(),
+  ...overrides,
+});
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockedUser.findById.mockResolvedValue(alice);
   mockedIsFresh.mockReturnValue(true);
   mockedGetPrice.mockReturnValue({ price: 50000, changePct24h: 1, updatedAt: Date.now(), source: "rest" });
   mockedOrders.create.mockImplementation(async (doc: object) => fakeOrderDoc(doc));
-  // Happy-path portfolio effects
-  mockedUser.updateOne.mockResolvedValue({ modifiedCount: 1 });
-  mockedHoldings.updateOne.mockResolvedValue({ modifiedCount: 1 });
-  mockedHoldings.findOne.mockResolvedValue({ qty: 1, avgCost: 45000 });
-  mockedHoldings.findOneAndUpdate.mockResolvedValue({});
-  mockedHoldings.deleteMany.mockResolvedValue({ deletedCount: 0 });
+  mockedPlaceGeminiOrder.mockResolvedValue(geminiFill());
 });
 
 describe("POST /api/orders — validation", () => {
   test("rejects unauthenticated requests with 401", async () => {
     const res = await request(app)
       .post("/api/orders")
+      .set("X-Requested-With", "XMLHttpRequest") // pass CSRF; isolate the auth check
       .send({ symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 1 });
     expect(res.status).toBe(401);
+  });
+
+  test("rejects a state-changing request without the CSRF header with 403", async () => {
+    const res = await request(app)
+      .post("/api/orders")
+      .set("Authorization", `Bearer ${token()}`)
+      .send({ symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 1 });
+    expect(res.status).toBe(403);
   });
 
   test.each([
@@ -132,11 +154,12 @@ describe("POST /api/orders — validation", () => {
       qty: 1000, // 1000 * 50000 = 50M > 10M cap
     });
     expect(res.status).toBe(400);
+    expect(mockedPlaceGeminiOrder).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /api/orders — market fills", () => {
-  test("a BUY debits the exact notional and upserts the holding", async () => {
+  test("a BUY places an IOC limit order crossed above the market price", async () => {
     const res = await authedPost().send({
       symbol: "BTCUSD",
       side: "BUY",
@@ -146,94 +169,65 @@ describe("POST /api/orders — market fills", () => {
     expect(res.status).toBe(201);
     expect(res.body.order.status).toBe("FILLED");
     expect(res.body.order.fillPrice).toBe(50000);
-    // Conditional atomic debit of exactly 0.1 * 50000
-    expect(mockedUser.updateOne).toHaveBeenCalledWith(
-      { _id: "user-1", balance: { $gte: 5000 } },
-      { $inc: { balance: -5000 } }
-    );
-    expect(mockedHoldings.findOneAndUpdate).toHaveBeenCalled();
+    expect(res.body.order.geminiOrderId).toBe("gemini-1");
+
+    const [call] = mockedPlaceGeminiOrder.mock.calls[0];
+    expect(call.symbol).toBe("BTCUSD");
+    expect(call.side).toBe("buy");
+    expect(Number(call.price)).toBeGreaterThan(50000); // crossed above market
+    expect(call.options).toEqual(["immediate-or-cancel"]);
   });
 
-  test("a BUY with insufficient funds is recorded REJECTED", async () => {
-    mockedUser.updateOne.mockResolvedValue({ modifiedCount: 0 }); // debit refused
-    const res = await authedPost().send({
+  test("a SELL crosses below the market price", async () => {
+    await authedPost().send({
       symbol: "BTCUSD",
-      side: "BUY",
+      side: "SELL",
       type: "MARKET",
-      qty: 3, // 150k > 100k balance
+      qty: 0.1,
     });
-    expect(res.status).toBe(201);
-    expect(res.body.order.status).toBe("REJECTED");
-    expect(res.body.order.reason).toMatch(/insufficient funds/i);
-    expect(mockedHoldings.findOneAndUpdate).not.toHaveBeenCalled();
+    const [call] = mockedPlaceGeminiOrder.mock.calls[0];
+    expect(call.side).toBe("sell");
+    expect(Number(call.price)).toBeLessThan(50000);
   });
 
-  test("a failed holding upsert refunds the debit", async () => {
-    mockedHoldings.findOneAndUpdate.mockRejectedValue(new Error("db down"));
+  test("a MARKET order Gemini doesn't fill at all is recorded REJECTED", async () => {
+    mockedPlaceGeminiOrder.mockResolvedValue(
+      geminiFill({ executed_amount: "0", remaining_amount: "0.1", is_cancelled: true })
+    );
     const res = await authedPost().send({
       symbol: "BTCUSD",
       side: "BUY",
       type: "MARKET",
       qty: 0.1,
     });
-    expect(res.body.order.status).toBe("REJECTED");
-    // Second updateOne call is the refund
-    expect(mockedUser.updateOne).toHaveBeenCalledWith(
-      { _id: "user-1" },
-      { $inc: { balance: 5000 } }
-    );
-  });
-
-  test("a SELL decrements the holding (guarded), cleans dust, credits proceeds + realized P&L", async () => {
-    const res = await authedPost().send({
-      symbol: "BTCUSD",
-      side: "SELL",
-      type: "MARKET",
-      qty: 0.2,
-    });
     expect(res.status).toBe(201);
-    expect(res.body.order.status).toBe("FILLED");
-    const [filter, update] = mockedHoldings.updateOne.mock.calls[0];
-    expect(filter.userId).toBe("user-1");
-    expect(filter.symbol).toBe("BTCUSD");
-    expect(filter.qty.$gte).toBeCloseTo(0.2, 6);
-    expect(update).toEqual({ $inc: { qty: -0.2 } });
-    expect(mockedHoldings.deleteMany).toHaveBeenCalled();
-    // proceeds 0.2 * 50000 = 10000; realized (50000 - 45000) * 0.2 = 1000
-    expect(mockedUser.updateOne).toHaveBeenCalledWith(
-      { _id: "user-1" },
-      { $inc: { balance: 10000, realizedPnl: 1000 } }
-    );
-    expect(res.body.order.realizedPnl).toBe(1000);
+    expect(res.body.order.status).toBe("REJECTED");
+    expect(res.body.order.reason).toMatch(/did not fill/i);
   });
 
-  test("a losing SELL books a negative realized P&L", async () => {
-    mockedHoldings.findOne.mockResolvedValue({ qty: 1, avgCost: 60000 });
+  test("a partially-filled MARKET order is recorded PARTIALLY_FILLED", async () => {
+    mockedPlaceGeminiOrder.mockResolvedValue(
+      geminiFill({ executed_amount: "0.05", remaining_amount: "0.05" })
+    );
     const res = await authedPost().send({
       symbol: "BTCUSD",
-      side: "SELL",
+      side: "BUY",
       type: "MARKET",
       qty: 0.1,
     });
-    // (50000 - 60000) * 0.1 = -1000
-    expect(res.body.order.realizedPnl).toBe(-1000);
-    expect(mockedUser.updateOne).toHaveBeenCalledWith(
-      { _id: "user-1" },
-      { $inc: { balance: 5000, realizedPnl: -1000 } }
-    );
+    expect(res.body.order.status).toBe("PARTIALLY_FILLED");
   });
 
-  test("a SELL without enough quantity is recorded REJECTED", async () => {
-    mockedHoldings.updateOne.mockResolvedValue({ modifiedCount: 0 });
+  test("a Gemini placement failure surfaces as a 502", async () => {
+    mockedPlaceGeminiOrder.mockRejectedValue(new Error("Gemini /v1/order/new responded 500"));
     const res = await authedPost().send({
       symbol: "BTCUSD",
-      side: "SELL",
+      side: "BUY",
       type: "MARKET",
-      qty: 5,
+      qty: 0.1,
     });
-    expect(res.body.order.status).toBe("REJECTED");
-    expect(res.body.order.reason).toMatch(/insufficient quantity/i);
-    expect(mockedUser.updateOne).not.toHaveBeenCalled(); // no credit
+    expect(res.status).toBe(502);
+    expect(mockedOrders.create).not.toHaveBeenCalled();
   });
 
   test("coerces numeric strings (regression from the old /neworder)", async () => {
@@ -249,7 +243,10 @@ describe("POST /api/orders — market fills", () => {
 });
 
 describe("POST /api/orders — limit placement", () => {
-  test("a plausible BUY limit rests OPEN", async () => {
+  test("a plausible BUY limit rests OPEN on Gemini", async () => {
+    mockedPlaceGeminiOrder.mockResolvedValue(
+      geminiFill({ executed_amount: "0", remaining_amount: "0.1", is_live: true })
+    );
     const res = await authedPost().send({
       symbol: "BTCUSD",
       side: "BUY",
@@ -260,32 +257,8 @@ describe("POST /api/orders — limit placement", () => {
     expect(res.status).toBe(201);
     expect(res.body.order.status).toBe("OPEN");
     expect(res.body.order.limitPrice).toBe(45000);
-    // No portfolio effects at placement
-    expect(mockedUser.updateOne).not.toHaveBeenCalled();
-  });
-
-  test("soft-rejects a BUY limit the user can't afford with 422", async () => {
-    const res = await authedPost().send({
-      symbol: "BTCUSD",
-      side: "BUY",
-      type: "LIMIT",
-      qty: 10,
-      limitPrice: 49000, // 490k > 100k balance
-    });
-    expect(res.status).toBe(422);
-    expect(mockedOrders.create).not.toHaveBeenCalled();
-  });
-
-  test("soft-rejects a SELL limit for more than is held with 422", async () => {
-    mockedHoldings.findOne.mockResolvedValue({ qty: 0.05 });
-    const res = await authedPost().send({
-      symbol: "BTCUSD",
-      side: "SELL",
-      type: "LIMIT",
-      qty: 1,
-      limitPrice: 60000,
-    });
-    expect(res.status).toBe(422);
+    const [call] = mockedPlaceGeminiOrder.mock.calls[0];
+    expect(call.options).toBeUndefined();
   });
 
   test("rejects an implausibly distant limitPrice with 400", async () => {
@@ -297,6 +270,91 @@ describe("POST /api/orders — limit placement", () => {
       limitPrice: 50000 * 200,
     });
     expect(res.status).toBe(400);
+    expect(mockedPlaceGeminiOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/orders — idempotency (clientOrderId)", () => {
+  test("passes clientOrderId through to Gemini and persists it", async () => {
+    const res = await authedPost().send({
+      symbol: "BTCUSD",
+      side: "BUY",
+      type: "MARKET",
+      qty: 0.1,
+      clientOrderId: "key-abc",
+    });
+    expect(res.status).toBe(201);
+    expect(mockedPlaceGeminiOrder.mock.calls[0][0].clientOrderId).toBe("key-abc");
+    expect(mockedOrders.create.mock.calls[0][0].clientOrderId).toBe("key-abc");
+  });
+
+  test("a retry with the same clientOrderId returns the existing order without re-placing", async () => {
+    // Simulate the first attempt already recorded: findOne finds it.
+    mockedOrders.findOne.mockResolvedValue(
+      fakeOrderDoc({ symbol: "BTCUSD", side: "BUY", clientOrderId: "key-dup", status: "FILLED" })
+    );
+    const res = await authedPost().send({
+      symbol: "BTCUSD",
+      side: "BUY",
+      type: "MARKET",
+      qty: 0.1,
+      clientOrderId: "key-dup",
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.order.status).toBe("FILLED");
+    // Neither the exchange nor a second insert was touched.
+    expect(mockedPlaceGeminiOrder).not.toHaveBeenCalled();
+    expect(mockedOrders.create).not.toHaveBeenCalled();
+  });
+
+  test("rejects a non-string clientOrderId with 400", async () => {
+    const res = await authedPost().send({
+      symbol: "BTCUSD",
+      side: "BUY",
+      type: "MARKET",
+      qty: 0.1,
+      clientOrderId: { not: "a string" },
+    });
+    expect(res.status).toBe(400);
+    expect(mockedPlaceGeminiOrder).not.toHaveBeenCalled();
+  });
+
+  test("a true race (both requests pass findOne, insert loses to the unique index) still returns the winner's order, not a 500", async () => {
+    // Neither request sees the other's row yet — findOne returns nothing for
+    // both, so both go on to place on Gemini (which dedupes on client_order_id)
+    // and both call create(). The unique (userId, clientOrderId) index lets
+    // only the first insert through; this request's create() is the loser.
+    mockedOrders.findOne
+      .mockResolvedValueOnce(null) // pre-insert idempotency check: not seen yet
+      .mockResolvedValueOnce(
+        fakeOrderDoc({ symbol: "BTCUSD", side: "BUY", clientOrderId: "key-race", status: "FILLED" })
+      ); // post-11000 lookup: the winner's row
+    mockedOrders.create.mockRejectedValueOnce({ code: 11000 });
+
+    const res = await authedPost().send({
+      symbol: "BTCUSD",
+      side: "BUY",
+      type: "MARKET",
+      qty: 0.1,
+      clientOrderId: "key-race",
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.order.status).toBe("FILLED");
+    // Gemini was still hit once (dedup happens there); no balance-cache churn
+    // from this losing branch since it returns the existing doc, not a fresh fill.
+    expect(mockedPlaceGeminiOrder).toHaveBeenCalledTimes(1);
+  });
+
+  test("a create() failure unrelated to the unique index (no clientOrderId) still surfaces as a 500", async () => {
+    mockedOrders.create.mockRejectedValueOnce(new Error("Mongo connection lost"));
+    const res = await authedPost().send({
+      symbol: "BTCUSD",
+      side: "BUY",
+      type: "MARKET",
+      qty: 0.1,
+    });
+    expect(res.status).toBe(500);
   });
 });
 
@@ -332,33 +390,63 @@ describe("GET /api/orders", () => {
 });
 
 describe("POST /api/orders/:id/cancel", () => {
-  test("cancels an OPEN order atomically", async () => {
-    mockedOrders.findOneAndUpdate.mockResolvedValue({ _id: "o1", status: "CANCELLED" });
-    const res = await request(app)
-      .post("/api/orders/o1/cancel")
-      .set("Authorization", `Bearer ${token()}`);
-    expect(res.status).toBe(200);
-    expect(mockedOrders.findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: "o1", userId: "user-1", status: "OPEN" },
-      { $set: { status: "CANCELLED" } },
-      { new: true }
+  test("cancels on Gemini first, then reconciles the local order", async () => {
+    const restingOrder = fakeOrderDoc({
+      status: "OPEN",
+      geminiOrderId: "gemini-1",
+      userId: "user-1",
+    });
+    mockedOrders.findOne.mockResolvedValue(restingOrder);
+    mockedCancelGeminiOrder.mockResolvedValue(
+      geminiFill({ is_cancelled: true, executed_amount: "0" })
     );
-  });
 
-  test("returns 409 when the order is no longer open", async () => {
-    mockedOrders.findOneAndUpdate.mockResolvedValue(null);
     const res = await request(app)
-      .post("/api/orders/o1/cancel")
-      .set("Authorization", `Bearer ${token()}`);
-    expect(res.status).toBe(409);
+      .post("/api/orders/64a000000000000000000001/cancel")
+      .set("Authorization", `Bearer ${token()}`)
+      .set("X-Requested-With", "XMLHttpRequest");
+    expect(res.status).toBe(200);
+    expect(mockedCancelGeminiOrder).toHaveBeenCalledWith("gemini-1");
+    expect(restingOrder.status).toBe("CANCELLED");
+    expect(restingOrder.save).toHaveBeenCalled();
   });
-});
 
-describe("applyFillEffects — SELL epsilon guard", () => {
-  test("allows selling an entire position despite float dust", async () => {
-    await applyFillEffects("user-1", "BTCUSD", "SELL", 0.3, 50000);
-    const [filter] = mockedHoldings.updateOne.mock.calls[0];
-    // Guard must tolerate a stored qty of 0.30000000000000004-style dust
-    expect(filter.qty.$gte).toBeLessThan(0.3);
+  test("returns 404 (not 500) for a malformed order id", async () => {
+    const res = await request(app)
+      .post("/api/orders/not-an-objectid/cancel")
+      .set("Authorization", `Bearer ${token()}`)
+      .set("X-Requested-With", "XMLHttpRequest");
+    expect(res.status).toBe(404);
+    expect(mockedOrders.findOne).not.toHaveBeenCalled();
+    expect(mockedCancelGeminiOrder).not.toHaveBeenCalled();
+  });
+
+  test("returns 409 when the order is no longer open locally", async () => {
+    mockedOrders.findOne.mockResolvedValue(null);
+    const res = await request(app)
+      .post("/api/orders/64a000000000000000000001/cancel")
+      .set("Authorization", `Bearer ${token()}`)
+      .set("X-Requested-With", "XMLHttpRequest");
+    expect(res.status).toBe(409);
+    expect(mockedCancelGeminiOrder).not.toHaveBeenCalled();
+  });
+
+  test("marks FILLED if Gemini's order filled before the cancel landed", async () => {
+    const restingOrder = fakeOrderDoc({
+      status: "OPEN",
+      geminiOrderId: "gemini-1",
+      userId: "user-1",
+    });
+    mockedOrders.findOne.mockResolvedValue(restingOrder);
+    mockedCancelGeminiOrder.mockResolvedValue(
+      geminiFill({ is_cancelled: false, executed_amount: "0.1", remaining_amount: "0" })
+    );
+
+    const res = await request(app)
+      .post("/api/orders/64a000000000000000000001/cancel")
+      .set("Authorization", `Bearer ${token()}`)
+      .set("X-Requested-With", "XMLHttpRequest");
+    expect(res.status).toBe(200);
+    expect(restingOrder.status).toBe("FILLED");
   });
 });

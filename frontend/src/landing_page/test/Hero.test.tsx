@@ -30,7 +30,7 @@ describe('Home Hero Component', () => {
     test("renders the tagline and CTAs", () => {
         render(<Hero />);
         expect(
-            screen.getByText('Learn to trade crypto with $100,000 — none of it real.')
+            screen.getByText('Trade crypto for real — with none of the risk.')
         ).toBeInTheDocument();
         expect(
             screen.getByRole('link', { name: /start trading free/i })

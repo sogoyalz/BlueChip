@@ -32,6 +32,17 @@ export const orderLimiter = rateLimit({
   message: { message: "Too many orders — slow down a little" },
 });
 
+// Public market-data routes that proxy to Gemini (candles, order book).
+// These are unauthenticated and each can trigger an upstream fetch, so they
+// get a tighter per-IP cap than the app-wide backstop.
+export const marketLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: num(process.env.MARKET_RATE_MAX, 60),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many market-data requests — slow down a little" },
+});
+
 // App-wide backstop.
 export const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
