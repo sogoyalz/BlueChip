@@ -30,5 +30,6 @@ logs/
 .vscode/
 .idea/
 
-# ---- Claude Code local instructions ----
+# ---- Local editor / tooling config ----
 CLAUDE.md
+.claude/

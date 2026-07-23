@@ -5,6 +5,16 @@
 #   CORS_ORIGINS       — comma-separated Netlify URLs of the two frontends
 #   GEMINI_API_KEY      — Gemini SANDBOX trading API key (exchange.sandbox.gemini.com)
 #   GEMINI_API_SECRET   — Gemini SANDBOX trading API secret
+#
+# IMPORTANT — auth cookie/domain requirement: the auth cookie is sameSite:"lax",
+# which is only sent on same-site requests. If the backend and the two Netlify
+# frontends are deployed on unrelated domains (e.g. the default *.onrender.com
+# and *.netlify.app), the cookie will NOT be sent cross-site and login will
+# silently fail (401s, not a crash). Before going live, either:
+#   (a) put all three services on one registrable domain via custom domains
+#       (e.g. api.yoursite.com, app.yoursite.com, www.yoursite.com), or
+#   (b) change TOKEN_COOKIE.sameSite to "none" in backend/controllers/
+#       AuthController.ts (secure:true is already conditioned on NODE_ENV).
 services:
   - type: web
     name: bluechip-backend
@@ -15,6 +25,8 @@ services:
     startCommand: npm run serve
     healthCheckPath: /healthz
     envVars:
+      - key: NODE_ENV
+        value: production
       - key: MONGO_URL
         sync: false
       - key: TOKEN_KEY

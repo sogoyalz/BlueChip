@@ -318,6 +318,44 @@ describe("POST /api/orders — idempotency (clientOrderId)", () => {
     expect(res.status).toBe(400);
     expect(mockedPlaceGeminiOrder).not.toHaveBeenCalled();
   });
+
+  test("a true race (both requests pass findOne, insert loses to the unique index) still returns the winner's order, not a 500", async () => {
+    // Neither request sees the other's row yet — findOne returns nothing for
+    // both, so both go on to place on Gemini (which dedupes on client_order_id)
+    // and both call create(). The unique (userId, clientOrderId) index lets
+    // only the first insert through; this request's create() is the loser.
+    mockedOrders.findOne
+      .mockResolvedValueOnce(null) // pre-insert idempotency check: not seen yet
+      .mockResolvedValueOnce(
+        fakeOrderDoc({ symbol: "BTCUSD", side: "BUY", clientOrderId: "key-race", status: "FILLED" })
+      ); // post-11000 lookup: the winner's row
+    mockedOrders.create.mockRejectedValueOnce({ code: 11000 });
+
+    const res = await authedPost().send({
+      symbol: "BTCUSD",
+      side: "BUY",
+      type: "MARKET",
+      qty: 0.1,
+      clientOrderId: "key-race",
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.order.status).toBe("FILLED");
+    // Gemini was still hit once (dedup happens there); no balance-cache churn
+    // from this losing branch since it returns the existing doc, not a fresh fill.
+    expect(mockedPlaceGeminiOrder).toHaveBeenCalledTimes(1);
+  });
+
+  test("a create() failure unrelated to the unique index (no clientOrderId) still surfaces as a 500", async () => {
+    mockedOrders.create.mockRejectedValueOnce(new Error("Mongo connection lost"));
+    const res = await authedPost().send({
+      symbol: "BTCUSD",
+      side: "BUY",
+      type: "MARKET",
+      qty: 0.1,
+    });
+    expect(res.status).toBe(500);
+  });
 });
 
 describe("GET /api/orders", () => {
