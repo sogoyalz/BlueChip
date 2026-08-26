@@ -6,6 +6,7 @@ jest.mock("../model/OrdersModel", () => ({
   OrdersModel: { find: jest.fn() },
 }));
 jest.mock("../services/geminiPrivate", () => ({
+  getGeminiActiveOrders: jest.fn(),
   getGeminiOrderStatus: jest.fn(),
   clearBalancesCache: jest.fn(),
 }));
@@ -13,12 +14,17 @@ jest.mock("../services/snapshots", () => ({
   snapshotNow: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { tick } from "../services/orderSync";
+import { tick, MAX_STATUS_LOOKUPS_PER_TICK } from "../services/orderSync";
 import { OrdersModel } from "../model/OrdersModel";
-import { getGeminiOrderStatus } from "../services/geminiPrivate";
+import {
+  getGeminiActiveOrders,
+  getGeminiOrderStatus,
+  clearBalancesCache,
+} from "../services/geminiPrivate";
 import { snapshotNow } from "../services/snapshots";
 
 const mockedOrders = OrdersModel as unknown as Record<string, jest.Mock>;
+const mockedActiveOrders = getGeminiActiveOrders as jest.Mock;
 const mockedGetStatus = getGeminiOrderStatus as jest.Mock;
 const mockedSnapshotNow = snapshotNow as jest.Mock;
 
@@ -49,6 +55,9 @@ const geminiStatus = (overrides: Partial<Record<string, unknown>> = {}) => ({
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Default: nothing left resting on Gemini's book, so each local order is
+  // resolved with an individual status lookup.
+  mockedActiveOrders.mockResolvedValue([]);
 });
 
 describe("tick", () => {
@@ -90,8 +99,12 @@ describe("tick", () => {
     expect(order.status).toBe("PARTIALLY_FILLED");
   });
 
-  test("updates fillPrice when a PARTIALLY_FILLED order fills more without changing status", async () => {
-    const order = restingOrder({ status: "PARTIALLY_FILLED", fillPrice: 45000 });
+  test("updates the fill when a PARTIALLY_FILLED order fills more without changing status", async () => {
+    const order = restingOrder({
+      status: "PARTIALLY_FILLED",
+      filledQty: 0.05,
+      fillPrice: 45000,
+    });
     findReturns([order]);
     // Still partially filled (remaining > 0) but more executed at a new avg price.
     mockedGetStatus.mockResolvedValue(
@@ -99,19 +112,49 @@ describe("tick", () => {
     );
     await tick();
     expect(order.status).toBe("PARTIALLY_FILLED"); // unchanged
-    expect(order.fillPrice).toBe(45500); // but the fill price advanced
+    expect(order.filledQty).toBe(0.08); // but more of it executed
+    expect(order.fillPrice).toBe(45500);
     expect(order.save).toHaveBeenCalled();
     expect(mockedSnapshotNow).toHaveBeenCalled();
   });
 
-  test("does NOT re-save a PARTIALLY_FILLED order whose fill price is unchanged", async () => {
-    const order = restingOrder({ status: "PARTIALLY_FILLED", fillPrice: 45000 });
+  test("does NOT re-save a PARTIALLY_FILLED order that executed nothing new", async () => {
+    const order = restingOrder({
+      status: "PARTIALLY_FILLED",
+      filledQty: 0.05,
+      fillPrice: 45000,
+    });
     findReturns([order]);
     mockedGetStatus.mockResolvedValue(
       geminiStatus({ executed_amount: "0.05", remaining_amount: "0.05", avg_execution_price: "45000" })
     );
     await tick();
     expect(order.save).not.toHaveBeenCalled();
+    expect(clearBalancesCache).not.toHaveBeenCalled();
+  });
+
+  test("a cancel on an already-recorded partial fill does not re-invalidate balances", async () => {
+    // The 0.4 was executed and accounted for on an earlier tick; the cancel
+    // itself moves nothing, so it must not trigger another snapshot.
+    const order = restingOrder({
+      status: "PARTIALLY_FILLED",
+      filledQty: 0.4,
+      fillPrice: 50000,
+    });
+    findReturns([order]);
+    mockedGetStatus.mockResolvedValue(
+      geminiStatus({
+        is_cancelled: true,
+        executed_amount: "0.4",
+        remaining_amount: "0.6",
+        avg_execution_price: "50000",
+      })
+    );
+    await tick();
+    expect(order.status).toBe("CANCELLED"); // status still recorded
+    expect(order.save).toHaveBeenCalled();
+    expect(clearBalancesCache).not.toHaveBeenCalled(); // ...but nothing moved
+    expect(mockedSnapshotNow).not.toHaveBeenCalled();
   });
 
   test("marks CANCELLED when Gemini reports the order cancelled", async () => {
@@ -136,3 +179,141 @@ describe("tick", () => {
     expect(good.status).toBe("FILLED");
   });
 });
+
+describe("balance invalidation on execution", () => {
+  test("a cancel that partially filled first still invalidates balances", async () => {
+    // Gemini cancelled the rest, but 0.4 executed — the shared account's
+    // balances moved, so the cache must drop and a snapshot must record it.
+    const order = restingOrder({ status: "OPEN" });
+    findReturns([order]);
+    mockedGetStatus.mockResolvedValue(
+      geminiStatus({
+        is_cancelled: true,
+        executed_amount: "0.4",
+        remaining_amount: "0.6",
+        avg_execution_price: "50000",
+      })
+    );
+
+    await tick();
+
+    expect(order.status).toBe("CANCELLED");
+    expect(order.filledQty).toBe(0.4);
+    expect(order.fillPrice).toBe(50000);
+    expect(clearBalancesCache).toHaveBeenCalled();
+    expect(mockedSnapshotNow).toHaveBeenCalled();
+  });
+
+  test("a cancel with nothing executed leaves balances alone", async () => {
+    const order = restingOrder({ status: "OPEN" });
+    findReturns([order]);
+    mockedGetStatus.mockResolvedValue(
+      geminiStatus({ is_cancelled: true, executed_amount: "0", remaining_amount: "1" })
+    );
+
+    await tick();
+
+    expect(order.status).toBe("CANCELLED");
+    expect(clearBalancesCache).not.toHaveBeenCalled();
+    expect(mockedSnapshotNow).not.toHaveBeenCalled();
+  });
+});
+
+describe("active-order batching", () => {
+  test("resolves still-resting orders from ONE active-orders call, with no per-order lookups", async () => {
+    // The steady state: three orders resting, nothing filled. This used to cost
+    // three status calls per tick and now costs none.
+    const orders = [
+      restingOrder({ _id: "o1", geminiOrderId: "g1" }),
+      restingOrder({ _id: "o2", geminiOrderId: "g2" }),
+      restingOrder({ _id: "o3", geminiOrderId: "g3" }),
+    ];
+    findReturns(orders);
+    mockedActiveOrders.mockResolvedValue([
+      geminiStatus({ order_id: "g1" }),
+      geminiStatus({ order_id: "g2" }),
+      geminiStatus({ order_id: "g3" }),
+    ]);
+
+    await tick();
+
+    expect(mockedActiveOrders).toHaveBeenCalledTimes(1);
+    expect(mockedGetStatus).not.toHaveBeenCalled();
+    orders.forEach((o) => expect(o.save).not.toHaveBeenCalled());
+  });
+
+  test("picks up a fill reported in the active list without a status lookup", async () => {
+    const order = restingOrder({ geminiOrderId: "g1" });
+    findReturns([order]);
+    mockedActiveOrders.mockResolvedValue([
+      geminiStatus({
+        order_id: "g1",
+        executed_amount: "0.05",
+        remaining_amount: "0.05",
+        avg_execution_price: "45000",
+      }),
+    ]);
+
+    await tick();
+
+    expect(mockedGetStatus).not.toHaveBeenCalled();
+    expect(order.status).toBe("PARTIALLY_FILLED");
+    expect(order.filledQty).toBe(0.05);
+    expect(clearBalancesCache).toHaveBeenCalled();
+  });
+
+  test("only orders missing from the active list cost a status lookup", async () => {
+    const stillResting = restingOrder({ _id: "o1", geminiOrderId: "g1" });
+    const goneFromBook = restingOrder({ _id: "o2", geminiOrderId: "g2" });
+    findReturns([stillResting, goneFromBook]);
+    mockedActiveOrders.mockResolvedValue([geminiStatus({ order_id: "g1" })]);
+    mockedGetStatus.mockResolvedValue(
+      geminiStatus({
+        order_id: "g2",
+        executed_amount: "0.1",
+        remaining_amount: "0",
+        avg_execution_price: "50000",
+      })
+    );
+
+    await tick();
+
+    expect(mockedGetStatus).toHaveBeenCalledTimes(1);
+    expect(mockedGetStatus).toHaveBeenCalledWith("g2");
+    expect(goneFromBook.status).toBe("FILLED");
+    expect(stillResting.save).not.toHaveBeenCalled();
+  });
+
+  test("caps per-tick status lookups so a burst of fills can't spike the API", async () => {
+    const many = Array.from({ length: MAX_STATUS_LOOKUPS_PER_TICK + 10 }, (_, i) =>
+      restingOrder({ _id: `o${i}`, geminiOrderId: `g${i}` })
+    );
+    findReturns(many);
+    mockedActiveOrders.mockResolvedValue([]); // all gone from the book at once
+    mockedGetStatus.mockResolvedValue(
+      geminiStatus({ executed_amount: "0.1", remaining_amount: "0", avg_execution_price: "50000" })
+    );
+
+    await tick();
+
+    expect(mockedGetStatus).toHaveBeenCalledTimes(MAX_STATUS_LOOKUPS_PER_TICK);
+    // The overflow is simply left for the next tick, not dropped.
+    expect(many[MAX_STATUS_LOOKUPS_PER_TICK].save).not.toHaveBeenCalled();
+  });
+
+  test("a failed active-orders call skips the pass instead of falling back to N lookups", async () => {
+    findReturns([restingOrder({})]);
+    mockedActiveOrders.mockRejectedValue(new Error("429 Too Many Requests"));
+
+    await tick();
+
+    expect(mockedGetStatus).not.toHaveBeenCalled();
+  });
+
+  test("does not call Gemini at all when nothing is resting locally", async () => {
+    findReturns([]);
+    await tick();
+    expect(mockedActiveOrders).not.toHaveBeenCalled();
+  });
+});
+

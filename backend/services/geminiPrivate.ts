@@ -122,6 +122,15 @@ export async function cancelGeminiOrder(
   });
 }
 
+/**
+ * Every order still live on the shared account's book, in ONE request.
+ * Orders that have filled or been cancelled simply aren't in the response —
+ * that absence is what tells orderSync which orders need an individual lookup.
+ */
+export async function getGeminiActiveOrders(): Promise<GeminiOrderResponse[]> {
+  return geminiPrivatePost<GeminiOrderResponse[]>("/v1/orders");
+}
+
 export async function getGeminiOrderStatus(
   orderId: string
 ): Promise<GeminiOrderResponse> {
@@ -137,25 +146,38 @@ export async function getGeminiOrderStatus(
 const BALANCES_TTL_MS = Number(process.env.GEMINI_BALANCES_TTL_MS) || 3_000;
 let balancesCache: { data: GeminiBalance[]; fetchedAt: number } | null = null;
 let balancesInFlight: Promise<GeminiBalance[]> | null = null;
+// Bumped by every invalidation. A fetch that was already in flight when the
+// cache was cleared carries pre-fill balances, so it must not publish them as
+// current — it compares the generation it started in before caching.
+let balancesGeneration = 0;
 
 export async function getGeminiBalances(): Promise<GeminiBalance[]> {
   if (balancesCache && Date.now() - balancesCache.fetchedAt < BALANCES_TTL_MS) {
     return balancesCache.data;
   }
   if (balancesInFlight) return balancesInFlight; // fold into the in-flight fetch
-  balancesInFlight = geminiPrivatePost<GeminiBalance[]>("/v1/balances")
+  const gen = balancesGeneration;
+  let inFlight: Promise<GeminiBalance[]>;
+  inFlight = geminiPrivatePost<GeminiBalance[]>("/v1/balances")
     .then((data) => {
-      balancesCache = { data, fetchedAt: Date.now() };
+      // Stale by the time it landed (a fill cleared the cache meanwhile) —
+      // hand the data to this caller but don't cache it.
+      if (gen === balancesGeneration) {
+        balancesCache = { data, fetchedAt: Date.now() };
+      }
       return data;
     })
     .finally(() => {
-      balancesInFlight = null;
+      // Only clear the slot if it's still ours; a newer fetch may have claimed it.
+      if (balancesInFlight === inFlight) balancesInFlight = null;
     });
-  return balancesInFlight;
+  balancesInFlight = inFlight;
+  return inFlight;
 }
 
-/** Test helper: drop the cached balances so a test starts from a clean slate. */
+/** Invalidate the cached balances (a fill changed them) — also used by tests. */
 export function clearBalancesCache(): void {
+  balancesGeneration += 1;
   balancesCache = null;
   balancesInFlight = null;
 }

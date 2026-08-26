@@ -114,6 +114,25 @@ describe("BuySellModal submit outcomes", () => {
     expect(mockedToastInfo).toHaveBeenCalledWith(expect.stringContaining("Limit buy placed"));
   });
 
+  test("a PARTIALLY_FILLED response is reported as a fill, not a rejection", async () => {
+    // A market order is immediate-or-cancel, so a partial fill is the final
+    // outcome — the user really did buy 0.4 BTC and must not be told otherwise.
+    mockedPost.mockResolvedValue({
+      data: {
+        order: { status: "PARTIALLY_FILLED", qty: 1, filledQty: 0.4, fillPrice: 50000 },
+      },
+    });
+    renderModal();
+    await screen.findByText(/Cash/);
+    enterQty("1");
+    clickBuy();
+    await waitFor(() => expect(closeTradeWindow).toHaveBeenCalled());
+    expect(mockedToastSuccess).toHaveBeenCalledWith(
+      expect.stringContaining("Bought 0.4 of 1 BTC")
+    );
+    expect(mockedToastError).not.toHaveBeenCalled();
+  });
+
   test("a REJECTED response shows the server's reason and keeps the window open", async () => {
     mockedPost.mockResolvedValue({
       data: { order: { status: "REJECTED", reason: "Order did not fill (immediate-or-cancel)" } },
@@ -182,5 +201,29 @@ describe("BuySellModal idempotency key", () => {
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(3));
     const thirdKey = mockedPost.mock.calls[2][1].clientOrderId;
     expect(thirdKey).not.toBe(firstKey); // new order after success gets a fresh key
+  });
+
+  test("editing the order after a failure issues a new clientOrderId", async () => {
+    // The key exists to dedupe a retry of the SAME order. Once the user
+    // changes the quantity it's a different order — reusing the key would make
+    // the server return the previous one and silently drop the edit.
+    mockedPost.mockRejectedValueOnce(new Error("Network Error"));
+    mockedPost.mockResolvedValueOnce({
+      data: { order: { status: "FILLED", qty: 0.5, fillPrice: 50000 } },
+    });
+    renderModal();
+    await screen.findByText(/Cash/);
+    enterQty("0.1");
+
+    clickBuy();
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1));
+    const firstKey = mockedPost.mock.calls[0][1].clientOrderId;
+    await screen.findByRole("button", { name: /^buy$/i });
+
+    enterQty("0.5"); // different order now
+    clickBuy();
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2));
+    expect(mockedPost.mock.calls[1][1].qty).toBe(0.5);
+    expect(mockedPost.mock.calls[1][1].clientOrderId).not.toBe(firstKey);
   });
 });

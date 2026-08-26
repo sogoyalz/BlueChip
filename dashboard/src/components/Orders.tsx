@@ -35,7 +35,9 @@ const Orders = () => {
       .then((res) => setAllOrders(res.data))
       .catch((err) => {
         console.error("Failed to load orders:", err);
-        if (showSpinner) toast.error("Could not load orders.");
+        if (showSpinner) {
+          toast.error("Could not load orders.", { toastId: "orders-error" });
+        }
       })
       .finally(() => {
         if (showSpinner) setLoading(false);
@@ -53,12 +55,19 @@ const Orders = () => {
 
   const handleCancel = async (order: Order) => {
     try {
-      await axios.post(
+      const { data } = await axios.post<{ order: Order }>(
         `${API_URL}/api/orders/${order._id}/cancel`,
         {},
         { withCredentials: true }
       );
-      toast.success(`Cancelled ${order.symbol} limit order`);
+      // The exchange is the source of truth: an order can fill in the moment
+      // before the cancel lands, and the route returns 200 saying so. Reporting
+      // that as "Cancelled" would tell the user the opposite of what happened.
+      if (data.order?.status === "FILLED") {
+        toast.info(`${order.symbol} filled before the cancel reached the exchange`);
+      } else {
+        toast.success(`Cancelled ${order.symbol} limit order`);
+      }
     } catch (err) {
       const message = axios.isAxiosError(err)
         ? err.response?.data?.message
@@ -80,16 +89,34 @@ const Orders = () => {
         </span>
       ),
     },
-    { key: "qty", label: "Qty." },
+    {
+      key: "qty",
+      label: "Qty.",
+      // Keyed off what actually executed rather than the status label: an order
+      // can carry a partial fill under PARTIALLY_FILLED, under CANCELLED (the
+      // cancel landed after part of it traded), or under OPEN (a resting limit
+      // that partly crossed). In every one of those the requested amount alone
+      // hides a real trade.
+      render: (o) =>
+        o.status !== "FILLED" &&
+        typeof o.filledQty === "number" &&
+        o.filledQty < o.qty
+          ? `${o.filledQty} / ${o.qty}`
+          : o.qty,
+    },
     {
       key: "price",
       label: "Price",
-      render: (o) =>
-        o.status === "FILLED"
-          ? fmt(o.fillPrice)
-          : o.type === "LIMIT"
-            ? `${fmt(o.limitPrice)} (limit)`
-            : "—",
+      render: (o) => {
+        // A resting order's own price is the relevant one; the qty column
+        // carries any partial fill it has taken so far.
+        if (o.status === "OPEN") {
+          return o.type === "LIMIT" ? `${fmt(o.limitPrice)} (limit)` : "—";
+        }
+        // Otherwise, if any of it traded, the price it traded at is the fact.
+        if (typeof o.fillPrice === "number") return fmt(o.fillPrice);
+        return o.type === "LIMIT" ? `${fmt(o.limitPrice)} (limit)` : "—";
+      },
     },
     {
       key: "status",

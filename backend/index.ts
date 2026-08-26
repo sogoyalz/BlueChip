@@ -70,9 +70,15 @@ app.use(
   })
 );
 
+// Trimmed: "a.com, b.com" is the natural way to write this in a dashboard env
+// var, and an untrimmed " b.com" matches no origin — a silent 401-everywhere
+// login failure in production rather than a visible misconfiguration.
 const corsOrigins = (
   process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001"
-).split(",");
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
@@ -177,6 +183,20 @@ const migrate = async (): Promise<void> => {
     { $unset: { balance: "", realizedPnl: "" } }
   );
   await OrdersModel.updateMany({}, { $unset: { realizedPnl: "" } });
+  // The (userId, clientOrderId) index used to be `sparse`, which silently
+  // rejected a user's second order placed without an idempotency key (see the
+  // comment in schemas/OrdersSchema.ts). Mongo cannot change an existing
+  // index's options, so the old one is dropped here; mongoose recreates it
+  // from the schema — now as a partial index — on the next boot.
+  try {
+    await mongoose.connection
+      .collection("orders")
+      .dropIndex("userId_1_clientOrderId_1");
+    console.log("migrate: dropped legacy sparse clientOrderId index");
+  } catch {
+    // never existed, or already replaced — nothing to do
+  }
+
   for (const collection of ["positions", "holdings", "holding"]) {
     try {
       await mongoose.connection.dropCollection(collection);

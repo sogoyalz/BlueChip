@@ -29,7 +29,8 @@ export interface Order {
   side: OrderSide;
   type: OrderType;
   status: OrderStatus;
-  qty: number;
+  qty: number; // requested amount
+  filledQty?: number; // executed amount — less than qty on a partial fill
   limitPrice?: number;
   fillPrice?: number;
   geminiOrderId?: string;

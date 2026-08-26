@@ -15,7 +15,8 @@ export interface IOrder {
   side: OrderSide;
   type: OrderType;
   status: OrderStatus;
-  qty: number;
+  qty: number; // requested amount
+  filledQty?: number; // executed_amount — less than qty on a partial fill
   limitPrice?: number; // LIMIT orders only
   fillPrice?: number; // avg_execution_price once any of the order has filled
   geminiOrderId?: string; // Gemini sandbox order_id — source of truth for status
@@ -41,6 +42,7 @@ export const OrdersSchema = new Schema<IOrder>({
     required: true,
   },
   qty: { type: Number, required: true },
+  filledQty: Number,
   limitPrice: Number,
   fillPrice: Number,
   geminiOrderId: String,
@@ -53,9 +55,23 @@ export const OrdersSchema = new Schema<IOrder>({
 // orderSync scans resting orders; users list their own newest-first.
 OrdersSchema.index({ status: 1, type: 1 });
 OrdersSchema.index({ userId: 1, createdAt: -1 });
-// Idempotency: a (user, clientOrderId) pair may exist at most once. Sparse so
-// orders placed without a key (the field is optional) don't collide on null.
+// Idempotency: a (user, clientOrderId) pair may exist at most once.
+//
+// This MUST be a partial index, not a sparse one. `sparse` reads like "skip
+// documents without the field", but on a COMPOUND index Mongo indexes a
+// document when ANY indexed field is present — and userId always is. So every
+// order placed without an idempotency key (the field is optional, and the
+// README's own example omits it) was indexed with clientOrderId: null, and a
+// user's SECOND keyless order collided with their first. Worse, the insert
+// happens after the order is already live on Gemini, so the fill existed on the
+// exchange with no local record of it.
+//
+// partialFilterExpression indexes only orders that actually carry a key, which
+// is what the constraint was always meant to express.
 OrdersSchema.index(
   { userId: 1, clientOrderId: 1 },
-  { unique: true, sparse: true }
+  {
+    unique: true,
+    partialFilterExpression: { clientOrderId: { $type: "string" } },
+  }
 );

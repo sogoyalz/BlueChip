@@ -105,3 +105,40 @@ describe("signed requests", () => {
     await expect(getGeminiBalances()).rejects.toThrow(/not configured/);
   });
 });
+
+describe("balances cache invalidation", () => {
+  const okJson = (body: unknown) => ({ ok: true, json: async () => body });
+  const balances = [{ currency: "USD", amount: "100", available: "100", availableForWithdrawal: "100" }];
+
+  test("serves a second read from cache when nothing invalidated it", async () => {
+    const mockFetch = jest.fn().mockResolvedValue(okJson(balances));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await getGeminiBalances();
+    await getGeminiBalances();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("a fetch that was in flight when the cache was cleared does not repopulate it", async () => {
+    // Exactly the post-fill race: /v1/balances is already in flight when an
+    // order fills and clears the cache. Its result is pre-fill, so caching it
+    // would serve stale balances for the whole TTL right when they matter.
+    const resolvers: Array<(v: unknown) => void> = [];
+    const mockFetch = jest
+      .fn()
+      .mockImplementation(() => new Promise((resolve) => resolvers.push(resolve)));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances, clearBalancesCache } = require("../services/geminiPrivate");
+
+    const inFlight = getGeminiBalances();
+    clearBalancesCache(); // a fill landed mid-fetch
+    resolvers[0](okJson(balances));
+    await inFlight;
+
+    void getGeminiBalances();
+    expect(mockFetch).toHaveBeenCalledTimes(2); // went back to Gemini, not the cache
+  });
+});

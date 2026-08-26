@@ -38,6 +38,14 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
   // doesn't place a second order), cleared once an order is accepted.
   const clientOrderIdRef = useRef<string | null>(null);
 
+  // Reusing the key across a retry is the point — it's what stops a
+  // slow-but-successful first attempt from double-filling. But the moment any
+  // order parameter changes this is a *different* order: keeping the key would
+  // make the server return the previous order and silently drop the edit.
+  useEffect(() => {
+    clientOrderIdRef.current = null;
+  }, [qty, limitPrice, mode, orderType]);
+
   const isBuy = mode === "BUY";
   const livePrice = prices[uid]?.price;
   const base = symbols.find((s) => s.symbol === uid)?.base ?? uid;
@@ -107,6 +115,15 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
       if (order.status === "FILLED") {
         toast.success(
           `${isBuy ? "Bought" : "Sold"} ${order.qty} ${base} at ${fmt$(order.fillPrice!)}`
+        );
+        generalContext.closeTradeWindow();
+      } else if (order.status === "PARTIALLY_FILLED") {
+        // A market order is immediate-or-cancel: whatever didn't cross the
+        // book is gone, so this is the final outcome, not a pending one.
+        const filled = order.filledQty ?? order.qty;
+        toast.success(
+          `${isBuy ? "Bought" : "Sold"} ${filled} of ${order.qty} ${base} at ` +
+            `${fmt$(order.fillPrice!)} — the rest didn't fill.`
         );
         generalContext.closeTradeWindow();
       } else if (order.status === "OPEN") {

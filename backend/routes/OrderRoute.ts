@@ -4,6 +4,8 @@ import { OrdersModel } from "../model/OrdersModel";
 import { verifyToken } from "../middlewares/AuthMiddleware";
 import { orderLimiter } from "../middlewares/rateLimit";
 import { OrderError, placeOrder, cancelOrder } from "../services/orderEngine";
+import { clearBalancesCache } from "../services/geminiPrivate";
+import { snapshotNow } from "../services/snapshots";
 
 const router = Router();
 
@@ -67,9 +69,15 @@ router.post("/api/orders/:id/cancel", verifyToken, orderLimiter, async (req, res
     order.status = result.status;
     if (result.fillPrice !== undefined) {
       order.fillPrice = result.fillPrice;
+      order.filledQty = result.filledQty;
       order.filledAt = new Date();
     }
     await order.save();
+    // Part of it executed before the cancel landed — balances moved.
+    if (result.filledQty) {
+      clearBalancesCache();
+      void snapshotNow();
+    }
     res.json({ order });
   } catch (err) {
     console.error(err);

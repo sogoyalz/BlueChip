@@ -161,6 +161,7 @@ export async function placeOrder(
       type,
       status,
       qty,
+      filledQty: executed > 0 ? executed : undefined,
       limitPrice: type === "LIMIT" ? limitPrice : undefined,
       geminiOrderId: geminiResult.order_id,
       clientOrderId,
@@ -178,6 +179,15 @@ export async function placeOrder(
       const existing = await OrdersModel.findOne({ userId, clientOrderId });
       if (existing) return existing;
     }
+    // Anything else means the order is LIVE ON THE EXCHANGE but we failed to
+    // record it — balances have moved and nothing local knows about it. Log the
+    // exchange's own id loudly so it can be reconciled by hand; the caller
+    // still gets an error rather than a false success.
+    console.error(
+      `[orderEngine] ORPHANED FILL — order ${geminiResult.order_id} is live on ` +
+        `Gemini for user ${userId} but could not be persisted:`,
+      err
+    );
     throw err;
   }
 
@@ -194,15 +204,20 @@ export async function placeOrder(
 /** Cancel a resting order: Gemini is the source of truth, cancelled first. */
 export async function cancelOrder(
   geminiOrderId: string
-): Promise<{ status: "CANCELLED" | "FILLED"; fillPrice?: number }> {
+): Promise<{ status: "CANCELLED" | "FILLED"; fillPrice?: number; filledQty?: number }> {
   const result = await cancelGeminiOrder(geminiOrderId);
   const executed = Number(result.executed_amount);
   if (result.is_cancelled) {
     return {
       status: "CANCELLED",
       fillPrice: executed > 0 ? Number(result.avg_execution_price) : undefined,
+      filledQty: executed > 0 ? executed : undefined,
     };
   }
   // Filled before the cancel reached Gemini.
-  return { status: "FILLED", fillPrice: Number(result.avg_execution_price) };
+  return {
+    status: "FILLED",
+    fillPrice: Number(result.avg_execution_price),
+    filledQty: executed > 0 ? executed : undefined,
+  };
 }
