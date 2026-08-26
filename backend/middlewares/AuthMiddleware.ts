@@ -15,17 +15,28 @@ declare global {
   }
 }
 
+/**
+ * The only places a token is accepted from: the httpOnly cookie, or an
+ * Authorization: Bearer header.
+ *
+ * Deliberately NOT the URL/query string (query params leak into access logs,
+ * proxy logs, browser history and Referer headers) and NOT the request body —
+ * bodies land in logs and error reports just as readily, no client ever sent
+ * one, and a second intake path is a second thing to get wrong.
+ */
+export const extractToken = (req: Request): string | null => {
+  const bearer = req.headers.authorization;
+  return (
+    req.cookies?.token ||
+    (bearer && bearer.startsWith("Bearer ") ? bearer.slice(7) : null) ||
+    null
+  );
+};
+
 // Used by the frontend's "am I still logged in?" check (POST /).
 // Responds with a status flag rather than calling next().
-// Accepts the token from the cookie, the request body, or a Bearer
-// header — in production the dashboard runs on a different site, so
-// the backend-domain cookie never arrives cross-origin.
 export const userVerification = (req: Request, res: Response): void => {
-  const bearer = req.headers.authorization;
-  const token =
-    req.cookies.token ||
-    (typeof req.body?.token === "string" ? req.body.token : null) ||
-    (bearer && bearer.startsWith("Bearer ") ? bearer.slice(7) : null);
+  const token = extractToken(req);
 
   if (!token) {
     res.json({ status: false }); // no token = not logged in
@@ -53,17 +64,9 @@ export const userVerification = (req: Request, res: Response): void => {
 };
 
 // Route GUARD for protected data endpoints. On success calls next();
-// otherwise responds 401. Accepts the token from the cookie or an
-// Authorization: Bearer header — the dashboard lives on a different origin,
-// so the backend-domain cookie never arrives cross-origin and the header is
-// what carries the token in production. We deliberately do NOT read the token
-// from the URL/query string: query params leak into access logs, proxy logs,
-// browser history, and Referer headers.
+// otherwise responds 401. See extractToken for where the token may come from.
 export const verifyToken = (req: Request, res: Response, next: NextFunction): void => {
-  const bearer = req.headers.authorization;
-  const token =
-    req.cookies.token ||
-    (bearer && bearer.startsWith("Bearer ") ? bearer.slice(7) : null);
+  const token = extractToken(req);
 
   if (!token) {
     res.status(401).json({ status: false, message: "No token provided" });

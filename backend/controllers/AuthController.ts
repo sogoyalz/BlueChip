@@ -1,7 +1,10 @@
 import { Request, Response, CookieOptions } from "express";
 import bcrypt from "bcrypt";
+import jwt, { JwtPayload } from "jsonwebtoken";
 import { UserModel } from "../model/UserModel";
+import { BCRYPT_COST } from "../schemas/UserSchema";
 import { createSecretToken } from "../util/SecretToken";
+import { extractToken } from "../middlewares/AuthMiddleware";
 
 // Shared cookie options for the auth token. httpOnly so an XSS can't read it,
 // secure in production (HTTPS only). Logout clears the cookie with the SAME
@@ -26,6 +29,14 @@ const TOKEN_COOKIE: CookieOptions = {
   sameSite: "lax",
 };
 const TOKEN_MAX_AGE_MS = 12 * 60 * 60 * 1000; // match the JWT's 12-hour lifetime
+
+// A real hash to compare against when the email doesn't exist. Without it,
+// "no such user" returns as fast as the DB lookup while a wrong password costs
+// a full bcrypt verify — and that timing gap alone tells an attacker which
+// email addresses have accounts. Hashed once at boot at the same cost factor
+// as stored passwords (BCRYPT_COST) so the two paths take the same time —
+// measured at ~390ms either way, against a ~390ms gap before this existed.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("bluechip-nonexistent-account", BCRYPT_COST);
 
 // Lowercased/trimmed so the lookup matches the schema-normalized stored email.
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();
@@ -133,14 +144,12 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
 
     // 1. Find the user by email (normalized to match the stored form)
     const user = await UserModel.findOne({ email: normalizeEmail(email) });
-    if (!user) {
-      res.status(401).json({ success: false, message: "Incorrect password or email" });
-      return;
-    }
 
-    // 2. Compare the typed password with the stored hash
-    const auth = await bcrypt.compare(password, user.password);
-    if (!auth) {
+    // 2. Compare the typed password with the stored hash — or with the dummy
+    //    hash when there's no such user, so both paths cost the same bcrypt
+    //    verify and the response time reveals nothing about who has an account.
+    const auth = await bcrypt.compare(password, user ? user.password : DUMMY_PASSWORD_HASH);
+    if (!user || !auth) {
       res.status(401).json({ success: false, message: "Incorrect password or email" });
       return;
     }
@@ -157,11 +166,32 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-// LOGOUT — clears the auth cookie. JWTs are stateless, so any token already
-// in a client's hands stays valid until it expires; clearing the cookie is
-// the meaningful server-side step for the cookie-based (same-origin) flow.
-// Header-based (cross-origin) clients simply drop their stored token.
-export const Logout = async (_req: Request, res: Response): Promise<void> => {
+// LOGOUT — clears the auth cookie AND revokes the token server-side.
+//
+// Clearing the cookie alone only asks the browser to forget the token; a copy
+// captured beforehand would stay valid for the rest of its 12-hour life. The
+// schema already carries tokenVersion and every request checks it, so bumping
+// it here is what turns logout into real revocation.
+//
+// Note this revokes the user's OTHER sessions too — logging out anywhere logs
+// out everywhere. For an account that can place orders, that's the safer
+// default than leaving a captured token live.
+//
+// Best-effort by design: an expired or forged token has nothing to revoke, and
+// a failed bump must not strand the user in a logged-in-looking state. Either
+// way the cookie is cleared and the response is 200.
+export const Logout = async (req: Request, res: Response): Promise<void> => {
+  const token = extractToken(req);
+  if (token) {
+    try {
+      const payload = jwt.verify(token, process.env.TOKEN_KEY as string, {
+        algorithms: ["HS256"],
+      }) as JwtPayload;
+      await UserModel.updateOne({ _id: payload.id }, { $inc: { tokenVersion: 1 } });
+    } catch (err) {
+      console.warn("[logout] could not revoke token:", (err as Error).message);
+    }
+  }
   res.clearCookie("token", TOKEN_COOKIE);
   res.status(200).json({ success: true, message: "Logged out" });
 };

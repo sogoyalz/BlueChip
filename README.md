@@ -166,7 +166,10 @@ Base URL: `http://localhost:3002`
 | `POST` | `/api/orders/:id/cancel` | ✅ | Cancel a resting order (cancels on Gemini first) |
 | `GET` | `/api/portfolio/history?range=1W` | ✅ | Shared portfolio value snapshots |
 
-✅ = requires a valid JWT (cookie, `Authorization: Bearer`, or `?token=`).
+✅ = requires a valid JWT, sent as the httpOnly `token` cookie or an
+`Authorization: Bearer` header. Tokens are deliberately **not** accepted from the
+query string or the request body — both leak into access logs, proxy logs, browser
+history and error reports.
 
 **Place an order:**
 ```json
