@@ -14,7 +14,6 @@ import {
 
 import { SymbolInfo, TickerPrice } from "../types";
 import { DoughnutChart } from "./DoughnoutChart";
-import Sparkline from "./shared/Sparkline";
 
 // Brand ramp: accent reds first, then warm/neutral steps that stay legible on
 // the dark surface; entries beyond the eight slots fold to a muted gray.
@@ -121,7 +120,6 @@ const WatchListItem = ({
           <p className="symbol-name">{info.base}</p>
         </div>
         <div className="item-info">
-          <Sparkline seed={info.symbol} trend={isDown ? "down" : "up"} />
           <span className={`percent ${isDown ? "down" : "up"}`}>{pct}</span>
           {isDown ? (
             <KeyboardArrowDown className="down" />
@@ -144,7 +142,7 @@ const WatchListActions = ({ symbol }: { symbol: string }) => {
     <span className="actions">
       <span>
         <Tooltip
-          title="Buy (B)"
+          title="Buy"
           placement="top"
           arrow
           slots={{ transition: Grow }}
@@ -157,7 +155,7 @@ const WatchListActions = ({ symbol }: { symbol: string }) => {
           </button>
         </Tooltip>
         <Tooltip
-          title="Sell (S)"
+          title="Sell"
           placement="top"
           arrow
           slots={{ transition: Grow }}
@@ -170,7 +168,7 @@ const WatchListActions = ({ symbol }: { symbol: string }) => {
           </button>
         </Tooltip>
         <Tooltip
-          title="Chart (A)"
+          title="Chart"
           placement="top"
           arrow
           slots={{ transition: Grow }}

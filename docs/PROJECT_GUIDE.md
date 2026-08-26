@@ -189,9 +189,9 @@ If `modifiedCount === 0`, the money was already gone → the order becomes `REJE
 | `components/PricesContext.tsx` | **The live-price bloodstream**: subscribes to `/api/stream` (Server-Sent Events) so prices push in as they change, falling back to polling `/api/prices` if the stream can't connect; exposes `{prices, symbols, isStale}` to every component via context. |
 | `components/shared/DepthPanel.tsx` | Top-of-book order depth on the market page: ten bid and ask levels with quantity bars and the live spread, hidden gracefully whenever the book is empty. |
 | `components/TopBar.tsx` | Paper-trading disclaimer banner, live BTC & ETH tickers, and the Live/Delayed pill (dims when data is stale; tooltip says when prices are streaming via WebSocket). |
-| `components/Menu.tsx` | Nav: Dashboard / Orders / Holdings / Leaderboard / Funds / Apps. |
+| `components/Menu.tsx` | Nav: Dashboard / Orders / Holdings / Funds, plus the account menu and logout. |
 | `components/Dashboard.tsx` | The route table + layout (watchlist sidebar + content). Wraps everything in `GeneralContextProvider` so any page can open the trade modal. |
-| `components/WatchList.tsx` | The always-visible sidebar: all 8 coins with live price, 24h %, sparkline; search filter; hover reveals Buy/Sell/Chart actions; doughnut chart compares 24h movement (not raw prices — BTC would dwarf every slice). |
+| `components/WatchList.tsx` | The always-visible sidebar: all 8 coins with live price and 24h %; search filter; hover reveals Buy/Sell/Chart actions; doughnut chart compares 24h movement (not raw prices — BTC would dwarf every slice). |
 | `components/Summary.tsx` | The home page: greeting, portfolio value / today's P&L / total return / buying power cards, and the **real** performance chart drawn from portfolio snapshots (1D/1W/1M/ALL). |
 | `components/Orders.tsx` | Order history table: side & status chips (FILLED green, OPEN amber, REJECTED red with reason on hover), fill price, Cancel button on resting orders, 10s auto-refresh so matcher fills appear. |
 | `components/Holdings.tsx` | Positions table with live prices, per-row and total P&L, and a value bar chart; polls quietly every 10s. |
@@ -202,7 +202,7 @@ If `modifiedCount === 0`, the money was already gone → the order becomes `REJE
 | `components/shared/BuySellModal.tsx` | The order ticket: Buy/Sell tabs, **Market/Limit toggle**, live price that ticks while open, fractional quantities, estimated cost vs your cash, limit price prefilled from the live price, precise success/rejection toasts. |
 | `components/shared/CandleChart.tsx` | The one place `chartjs-chart-financial` is registered — candlesticks in theme colors, dark grid, time axis. Isolated so a library swap touches one file. |
 | `components/shared/DataTable.tsx` | Generic table with loading skeleton + empty states — used by Orders, Holdings, Leaderboard. |
-| `components/shared/Sparkline.tsx` | Small SVG line for watchlist rows; exports `linePath()` which Summary reuses for the big portfolio chart. |
+| `components/shared/chartPath.ts` | `linePath()` — maps a series of values to an SVG path. Used by Summary's portfolio chart. |
 | `components/shared/PnLValue.tsx`, `StatCard.tsx`, `EmptyState.tsx`, `Skeleton.tsx` | Green/red signed numbers with arrows; stat cards; empty and loading states. |
 | `components/DoughnoutChart.tsx`, `VerticalGraph.tsx` | Chart.js doughnut & bar wrappers. |
 | `*.test.tsx` | Component tests (Holdings, Funds, PnLValue, EmptyState) with axios mocked. |
@@ -217,7 +217,6 @@ If `modifiedCount === 0`, the money was already gone → the order becomes `REJE
 |---|---|
 | `README.md` | Quick start, feature list, API table, deployment guide. |
 | `docs/PROJECT_GUIDE.md` | This file. |
-| `CLAUDE.md` | Instructions for AI coding tools used on this repo. |
 
 ---
 

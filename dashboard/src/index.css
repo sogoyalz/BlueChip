@@ -373,6 +373,20 @@ input:focus-visible {
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background-color 0.15s ease;
+  /* Reset the <button> defaults so it renders exactly as the row always has.
+     It is a button (not a div) so the account menu — and Logout with it — is
+     reachable by keyboard and announced to assistive tech.
+     No width here: this sits in the horizontal top bar, and stretching it
+     pushes the nav links out of view. */
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+}
+
+.profile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .profile:hover {
@@ -543,18 +557,6 @@ input:focus-visible {
   font-size: 0.82rem;
   font-weight: 700;
   color: var(--ink);
-}
-
-.sparkline {
-  flex-shrink: 0;
-}
-
-.sparkline.up {
-  color: var(--gain);
-}
-
-.sparkline.down {
-  color: var(--loss);
 }
 
 .item-info {

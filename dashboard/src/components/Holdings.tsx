@@ -62,7 +62,9 @@ const Holdings = () => {
         })
         .catch((err) => {
           console.error("Failed to load holdings:", err);
-          if (showSpinner) toast.error("Could not load holdings.");
+          if (showSpinner) {
+            toast.error("Could not load holdings.", { toastId: "holdings-error" });
+          }
         })
         .finally(() => {
           if (showSpinner && !cancelled) setLoading(false);

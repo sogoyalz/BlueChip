@@ -13,6 +13,10 @@ import { SymbolInfo, TickerPrice } from "../types";
 const POLL_MS = 5000;
 // If we haven't heard from the backend in this long, flag prices as stale.
 const STALE_AFTER_MS = 15000;
+// How often we re-check that. EventSource retries a dropped stream silently,
+// so without a clock-based check the UI would keep showing frozen prices as
+// live for as long as the backend stays down.
+const STALE_CHECK_MS = 5000;
 
 interface PricesContextValue {
   prices: Record<string, TickerPrice>;
@@ -96,10 +100,16 @@ export const PricesProvider = ({ children }: { children: React.ReactNode }) => {
       startPolling();
     }
 
+    const staleTimer = setInterval(() => {
+      if (cancelled) return;
+      if (Date.now() - lastSuccess.current > STALE_AFTER_MS) setIsStale(true);
+    }, STALE_CHECK_MS);
+
     return () => {
       cancelled = true;
       es?.close();
       if (pollTimer) clearInterval(pollTimer);
+      clearInterval(staleTimer);
     };
   }, []);
 

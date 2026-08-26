@@ -1,7 +1,6 @@
 import React from "react";
 import { Route, Routes } from "react-router-dom";
 
-import Apps from "./App";
 import Funds from "./Funds";
 import Holdings from "./Holdings";
 import MarketDetail from "./MarketDetail";
@@ -24,7 +23,6 @@ const Dashboard = () => {
             <Route path="/holdings" element={<Holdings />} />
             <Route path="/funds" element={<Funds />} />
             <Route path="/market/:symbol" element={<MarketDetail />} />
-            <Route path="/apps" element={<Apps />} />
           </Routes>
         </div>
       </div>

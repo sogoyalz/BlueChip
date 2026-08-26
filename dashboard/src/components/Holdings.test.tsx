@@ -63,6 +63,11 @@ describe("Holdings", () => {
     mockedGet.mockRejectedValue(new Error("network down"));
     renderHoldings();
     expect(await screen.findByText(/no holdings yet/i)).toBeInTheDocument();
-    expect(mockedToastError).toHaveBeenCalledWith("Could not load holdings.");
+    // toastId dedupes so a retry / StrictMode double-mount can't stack two
+    // identical toasts (visible in the browser before this was added).
+    expect(mockedToastError).toHaveBeenCalledWith(
+      "Could not load holdings.",
+      expect.objectContaining({ toastId: "holdings-error" })
+    );
   });
 });

@@ -11,7 +11,6 @@ const menuItems = [
   { to: "/orders", label: "Orders" },
   { to: "/holdings", label: "Holdings" },
   { to: "/funds", label: "Funds" },
-  { to: "/apps", label: "Apps" },
 ];
 
 const Menu = () => {
@@ -76,10 +75,16 @@ const Menu = () => {
           ))}
         </ul>
         <hr />
-        <div className="profile" onClick={handleProfileClick}>
+        <button
+          type="button"
+          className="profile"
+          onClick={handleProfileClick}
+          aria-haspopup="menu"
+          aria-expanded={isProfileDropdownOpen}
+        >
           <div className="avatar">{initials}</div>
-          <p className="username">{username ?? "Account"}</p>
-        </div>
+          <span className="username">{username ?? "Account"}</span>
+        </button>
         {isProfileDropdownOpen && (
           <div className="profile-dropdown">
             <button type="button" className="logout-btn" onClick={handleLogout}>

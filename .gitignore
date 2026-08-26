@@ -30,6 +30,3 @@ logs/
 .vscode/
 .idea/
 
-# ---- Local editor / tooling config ----
-CLAUDE.md
-.claude/

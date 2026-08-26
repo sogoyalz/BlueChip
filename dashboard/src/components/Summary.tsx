@@ -4,7 +4,7 @@ import { toast } from "react-toastify";
 
 import PnLValue from "./shared/PnLValue";
 import StatCard from "./shared/StatCard";
-import { linePath } from "./shared/Sparkline";
+import { linePath } from "./shared/chartPath";
 import { Account, Holding } from "../types";
 import { API_URL } from "../config";
 
@@ -30,6 +30,9 @@ const CH = 260;
 
 const Summary = () => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  // null until the holdings call resolves — an empty array is a real "no
+  // positions", which is a different thing from "we don't know".
+  const [holdingsLoaded, setHoldingsLoaded] = useState(false);
   const [account, setAccount] = useState<Account | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
@@ -40,7 +43,10 @@ const Summary = () => {
     const opts = { withCredentials: true };
     axios
       .get<Holding[]>(`${API_URL}/api/holdings`, opts)
-      .then((res) => setHoldings(res.data))
+      .then((res) => {
+        setHoldings(res.data);
+        setHoldingsLoaded(true);
+      })
       .catch((err) => {
         console.error("Failed to load holdings summary:", err);
         // toastId dedupes so a retry / StrictMode double-mount can't stack
@@ -52,7 +58,10 @@ const Summary = () => {
     axios
       .get<Account>(`${API_URL}/api/account`, opts)
       .then((res) => setAccount(res.data))
-      .catch((err) => console.error("Failed to load account:", err));
+      .catch((err) => {
+        console.error("Failed to load account:", err);
+        toast.error("Could not load account.", { toastId: "account-error" });
+      });
   }, []);
 
   useEffect(() => {
@@ -68,14 +77,30 @@ const Summary = () => {
   const currentValue = holdings.reduce((sum, h) => sum + (h.price ?? 0) * h.qty, 0);
 
   // Today's move, approximated from each holding's 24h-change percentage.
+  // Cash doesn't move, so the dollar figure is holdings-only.
   const dayPL = holdings.reduce(
     (sum, h) => sum + (h.price ?? 0) * h.qty * ((h.dayChangePct ?? 0) / 100),
     0
   );
-  const dayPct = currentValue > 0 ? (dayPL / (currentValue - dayPL)) * 100 : 0;
 
   const balance = account?.balance ?? 0;
   const portfolioValue = account?.portfolioValue ?? currentValue + balance;
+
+  // When a load fails we genuinely do not know these figures. Rendering "$0"
+  // for an unknown balance is not a neutral placeholder in a trading app — it
+  // reads as "your portfolio is empty", which is alarming and false. Funds.tsx
+  // already shows "—" in exactly this situation; match it.
+  const money = (known: boolean, render: () => string) => (known ? render() : "—");
+  const accountKnown = account !== null;
+  // The day percentage needs BOTH sides: the move comes from holdings, the base
+  // it is measured against comes from the account. Unknown either way.
+  const deltaKnown = accountKnown && holdingsLoaded;
+
+  // The percentage is rendered as the delta on portfolio value (cash +
+  // holdings), so it has to be measured against that same base. Dividing by
+  // holdings alone overstates the move by the account's cash share.
+  const prevPortfolioValue = portfolioValue - dayPL;
+  const dayPct = prevPortfolioValue > 0 ? (dayPL / prevPortfolioValue) * 100 : 0;
 
   // Real snapshot history; a brand-new account renders a flat baseline.
   const chart = useMemo(() => {
@@ -117,20 +142,20 @@ const Summary = () => {
       <div className="row cols-4">
         <StatCard
           label="Portfolio value"
-          delta={<PnLValue text={fmtPct(dayPct)} />}
+          delta={<PnLValue text={money(deltaKnown, () => fmtPct(dayPct))} />}
           sub="shared account: cash + holdings"
         >
-          {fmt$(portfolioValue, 0)}
+          {money(accountKnown, () => fmt$(portfolioValue, 0))}
         </StatCard>
         <StatCard
           label="Today's P/L"
-          delta={<PnLValue text={fmtPct(dayPct)} showArrow />}
+          delta={<PnLValue text={money(deltaKnown, () => fmtPct(dayPct))} showArrow />}
           sub="unrealized, 24h"
         >
-          {signed$(dayPL, 0)}
+          {money(holdingsLoaded, () => signed$(dayPL, 0))}
         </StatCard>
         <StatCard label="Buying power" sub="available cash">
-          {fmt$(balance, 0)}
+          {money(accountKnown, () => fmt$(balance, 0))}
         </StatCard>
       </div>
 
@@ -138,9 +163,13 @@ const Summary = () => {
         <div className="chart-head">
           <div>
             <p className="chart-label">Portfolio value</p>
-            <h3 className="chart-value">{fmt$(portfolioValue)}</h3>
+            <h3 className="chart-value">
+              {money(accountKnown, () => fmt$(portfolioValue))}
+            </h3>
             <p className="chart-delta">
-              <PnLValue text={`${signed$(dayPL)} (${fmtPct(dayPct)})`} />
+              <PnLValue
+                text={money(deltaKnown, () => `${signed$(dayPL)} (${fmtPct(dayPct)})`)}
+              />
               <span className="today">today</span>
             </p>
           </div>

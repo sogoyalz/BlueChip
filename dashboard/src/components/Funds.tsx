@@ -24,7 +24,7 @@ const Funds = () => {
       .then((res) => setAccount(res.data))
       .catch((err) => {
         console.error("Failed to load account:", err);
-        toast.error("Could not load account.");
+        toast.error("Could not load account.", { toastId: "funds-account-error" });
       });
   }, []);
 
