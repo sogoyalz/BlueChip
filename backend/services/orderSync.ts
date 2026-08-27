@@ -12,6 +12,7 @@ import {
   clearBalancesCache,
 } from "./geminiPrivate";
 import { snapshotNow } from "./snapshots";
+import { applyObservation } from "./orderState";
 
 export const DEFAULT_SYNC_MS = 5_000;
 // Orders that have left Gemini's book need a status lookup of their own. Cap
@@ -82,13 +83,14 @@ export async function tick(): Promise<void> {
       const fillAdvanced = executed > 0 && executed !== (order.filledQty ?? 0);
       if (!statusChanged && !fillAdvanced) continue; // nothing changed
 
-      order.status = status;
-      if (executed > 0) {
-        order.fillPrice = nextFillPrice;
-        order.filledQty = executed;
-        order.filledAt = new Date();
-      }
-      await order.save();
+      // Conditional + atomic: a cancel racing this tick may already have
+      // written a NEWER observation, and last-write-wins would clobber it.
+      const updated = await applyObservation(order._id, {
+        status,
+        filledQty: executed,
+        fillPrice: executed > 0 ? nextFillPrice : undefined,
+      });
+      if (!updated) continue; // a fresher observation won; nothing to do
       // Only a NEW execution moves the shared account's balances — including
       // one on a CANCELLED order that partially filled before the cancel
       // landed. A cancel that executed nothing new leaves balances alone.

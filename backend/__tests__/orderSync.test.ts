@@ -3,7 +3,7 @@
  * order state (Gemini itself does all the matching now).
  */
 jest.mock("../model/OrdersModel", () => ({
-  OrdersModel: { find: jest.fn() },
+  OrdersModel: { find: jest.fn(), findOneAndUpdate: jest.fn() },
 }));
 jest.mock("../services/geminiPrivate", () => ({
   getGeminiActiveOrders: jest.fn(),
@@ -22,6 +22,7 @@ import {
   clearBalancesCache,
 } from "../services/geminiPrivate";
 import { snapshotNow } from "../services/snapshots";
+import { shouldApplyObservation } from "../services/orderState";
 
 const mockedOrders = OrdersModel as unknown as Record<string, jest.Mock>;
 const mockedActiveOrders = getGeminiActiveOrders as jest.Mock;
@@ -39,8 +40,31 @@ const restingOrder = (fields: object) => {
   return doc;
 };
 
+let currentDocs: Record<string, unknown>[] = [];
 const findReturns = (orders: object[]) => {
+  currentDocs = orders as Record<string, unknown>[];
   mockedOrders.find.mockReturnValue({ limit: jest.fn().mockResolvedValue(orders) });
+};
+
+/**
+ * Stands in for MongoDB's conditional update: applies $set only when the
+ * observation is newer, using the same rule the real filter encodes. Writes
+ * land on the fake document, so the tests keep asserting outcomes rather than
+ * which write mechanism was used.
+ */
+const conditionalUpdate = async (
+  filter: Record<string, unknown>,
+  update: { $set: Record<string, unknown> }
+) => {
+  const doc = currentDocs.find((d) => String(d._id) === String(filter._id));
+  if (!doc) return null;
+  const observed = {
+    status: update.$set.status as never,
+    filledQty: (update.$set.filledQty as number) ?? 0,
+  };
+  if (!shouldApplyObservation(doc as never, observed)) return null;
+  Object.assign(doc, update.$set);
+  return doc;
 };
 
 const geminiStatus = (overrides: Partial<Record<string, unknown>> = {}) => ({
@@ -58,6 +82,7 @@ beforeEach(() => {
   // Default: nothing left resting on Gemini's book, so each local order is
   // resolved with an individual status lookup.
   mockedActiveOrders.mockResolvedValue([]);
+  mockedOrders.findOneAndUpdate.mockImplementation(conditionalUpdate);
 });
 
 describe("tick", () => {
@@ -72,7 +97,7 @@ describe("tick", () => {
     findReturns([order]);
     mockedGetStatus.mockResolvedValue(geminiStatus());
     await tick();
-    expect(order.save).not.toHaveBeenCalled();
+    expect(mockedOrders.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   test("marks FILLED once remaining_amount hits zero", async () => {
@@ -85,7 +110,7 @@ describe("tick", () => {
     expect(order.status).toBe("FILLED");
     expect(order.fillPrice).toBe(45000);
     expect(order.filledAt).toBeInstanceOf(Date);
-    expect(order.save).toHaveBeenCalled();
+    expect(mockedOrders.findOneAndUpdate).toHaveBeenCalled();
     expect(mockedSnapshotNow).toHaveBeenCalled();
   });
 
@@ -114,7 +139,7 @@ describe("tick", () => {
     expect(order.status).toBe("PARTIALLY_FILLED"); // unchanged
     expect(order.filledQty).toBe(0.08); // but more of it executed
     expect(order.fillPrice).toBe(45500);
-    expect(order.save).toHaveBeenCalled();
+    expect(mockedOrders.findOneAndUpdate).toHaveBeenCalled();
     expect(mockedSnapshotNow).toHaveBeenCalled();
   });
 
@@ -129,7 +154,7 @@ describe("tick", () => {
       geminiStatus({ executed_amount: "0.05", remaining_amount: "0.05", avg_execution_price: "45000" })
     );
     await tick();
-    expect(order.save).not.toHaveBeenCalled();
+    expect(mockedOrders.findOneAndUpdate).not.toHaveBeenCalled();
     expect(clearBalancesCache).not.toHaveBeenCalled();
   });
 
@@ -152,7 +177,7 @@ describe("tick", () => {
     );
     await tick();
     expect(order.status).toBe("CANCELLED"); // status still recorded
-    expect(order.save).toHaveBeenCalled();
+    expect(mockedOrders.findOneAndUpdate).toHaveBeenCalled();
     expect(clearBalancesCache).not.toHaveBeenCalled(); // ...but nothing moved
     expect(mockedSnapshotNow).not.toHaveBeenCalled();
   });
@@ -239,7 +264,7 @@ describe("active-order batching", () => {
 
     expect(mockedActiveOrders).toHaveBeenCalledTimes(1);
     expect(mockedGetStatus).not.toHaveBeenCalled();
-    orders.forEach((o) => expect(o.save).not.toHaveBeenCalled());
+    expect(mockedOrders.findOneAndUpdate).not.toHaveBeenCalled();
   });
 
   test("picks up a fill reported in the active list without a status lookup", async () => {
@@ -281,7 +306,7 @@ describe("active-order batching", () => {
     expect(mockedGetStatus).toHaveBeenCalledTimes(1);
     expect(mockedGetStatus).toHaveBeenCalledWith("g2");
     expect(goneFromBook.status).toBe("FILLED");
-    expect(stillResting.save).not.toHaveBeenCalled();
+    expect(mockedOrders.findOneAndUpdate).toHaveBeenCalledTimes(1);
   });
 
   test("caps per-tick status lookups so a burst of fills can't spike the API", async () => {
@@ -298,7 +323,7 @@ describe("active-order batching", () => {
 
     expect(mockedGetStatus).toHaveBeenCalledTimes(MAX_STATUS_LOOKUPS_PER_TICK);
     // The overflow is simply left for the next tick, not dropped.
-    expect(many[MAX_STATUS_LOOKUPS_PER_TICK].save).not.toHaveBeenCalled();
+    expect(mockedOrders.findOneAndUpdate).toHaveBeenCalledTimes(MAX_STATUS_LOOKUPS_PER_TICK);
   });
 
   test("a failed active-orders call skips the pass instead of falling back to N lookups", async () => {

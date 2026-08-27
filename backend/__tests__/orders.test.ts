@@ -23,6 +23,8 @@ jest.mock("../model/OrdersModel", () => ({
     find: jest.fn(),
     create: jest.fn(),
     findOne: jest.fn(),
+    findById: jest.fn(),
+    findOneAndUpdate: jest.fn(),
     updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
   },
 }));
@@ -53,6 +55,7 @@ import {
   cancelGeminiOrder,
   clearBalancesCache,
 } from "../services/geminiPrivate";
+import { shouldApplyObservation } from "../services/orderState";
 import { snapshotNow } from "../services/snapshots";
 
 const mockedUser = UserModel as unknown as Record<string, jest.Mock>;
@@ -63,6 +66,21 @@ const mockedPlaceGeminiOrder = placeGeminiOrder as jest.Mock;
 const mockedCancelGeminiOrder = cancelGeminiOrder as jest.Mock;
 
 const token = () => jwt.sign({ id: "user-1" }, process.env.TOKEN_KEY as string);
+
+/**
+ * Stands in for MongoDB's conditional update: applies $set only when the
+ * observation is newer, using the same rule the real filter encodes.
+ */
+const conditionalUpdateOn = (doc: Record<string, unknown>) =>
+  jest.fn(async (_filter: unknown, update: { $set: Record<string, unknown> }) => {
+    const observed = {
+      status: update.$set.status as never,
+      filledQty: (update.$set.filledQty as number) ?? 0,
+    };
+    if (!shouldApplyObservation(doc as never, observed)) return null;
+    Object.assign(doc, update.$set);
+    return doc;
+  });
 const alice = { _id: "user-1", username: "alice", email: "a@b.com" };
 
 const authedPost = () =>
@@ -435,6 +453,7 @@ describe("POST /api/orders/:id/cancel", () => {
       userId: "user-1",
     });
     mockedOrders.findOne.mockResolvedValue(restingOrder);
+    mockedOrders.findOneAndUpdate.mockImplementation(conditionalUpdateOn(restingOrder));
     mockedCancelGeminiOrder.mockResolvedValue(
       geminiFill({ is_cancelled: true, executed_amount: "0" })
     );
@@ -446,7 +465,7 @@ describe("POST /api/orders/:id/cancel", () => {
     expect(res.status).toBe(200);
     expect(mockedCancelGeminiOrder).toHaveBeenCalledWith("gemini-1");
     expect(restingOrder.status).toBe("CANCELLED");
-    expect(restingOrder.save).toHaveBeenCalled();
+    expect(mockedOrders.findOneAndUpdate).toHaveBeenCalled();
   });
 
   test("returns 404 (not 500) for a malformed order id", async () => {
@@ -476,6 +495,7 @@ describe("POST /api/orders/:id/cancel", () => {
       userId: "user-1",
     });
     mockedOrders.findOne.mockResolvedValue(restingOrder);
+    mockedOrders.findOneAndUpdate.mockImplementation(conditionalUpdateOn(restingOrder));
     mockedCancelGeminiOrder.mockResolvedValue(
       geminiFill({ is_cancelled: false, executed_amount: "0.1", remaining_amount: "0" })
     );
@@ -486,5 +506,38 @@ describe("POST /api/orders/:id/cancel", () => {
       .set("X-Requested-With", "XMLHttpRequest");
     expect(res.status).toBe(200);
     expect(restingOrder.status).toBe("FILLED");
+  });
+
+  test("a cancel does not overwrite a fill an orderSync tick already recorded", async () => {
+    // The race this guard exists for: a sync tick observed the order fully
+    // filled and wrote FILLED/1.0 while the cancel was still in flight. The
+    // cancel's own observation (0.4 executed) is older, and CANCELLED is
+    // terminal — so landing it would strand 0.6 of filled quantity in a state
+    // orderSync never revisits.
+    const order = fakeOrderDoc({
+      status: "FILLED",
+      filledQty: 1,
+      fillPrice: 50000,
+      geminiOrderId: "gemini-1",
+      userId: "user-1",
+    });
+    mockedOrders.findOne.mockResolvedValue(order);
+    mockedOrders.findOneAndUpdate.mockImplementation(conditionalUpdateOn(order));
+    mockedOrders.findById.mockResolvedValue(order);
+    mockedCancelGeminiOrder.mockResolvedValue(
+      geminiFill({ is_cancelled: true, executed_amount: "0.4", avg_execution_price: "49000" })
+    );
+
+    const res = await request(app)
+      .post("/api/orders/64a000000000000000000001/cancel")
+      .set("Authorization", `Bearer ${token()}`)
+      .set("X-Requested-With", "XMLHttpRequest");
+
+    expect(res.status).toBe(200);
+    expect(order.status).toBe("FILLED"); // the newer observation stands
+    expect(order.filledQty).toBe(1);
+    expect(order.fillPrice).toBe(50000);
+    // ...and the caller is told the real state, not the one the cancel lost with
+    expect(res.body.order.status).toBe("FILLED");
   });
 });

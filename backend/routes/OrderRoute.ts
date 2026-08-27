@@ -6,6 +6,7 @@ import { orderLimiter } from "../middlewares/rateLimit";
 import { OrderError, placeOrder, cancelOrder } from "../services/orderEngine";
 import { clearBalancesCache } from "../services/geminiPrivate";
 import { snapshotNow } from "../services/snapshots";
+import { applyObservation } from "../services/orderState";
 
 const router = Router();
 
@@ -66,19 +67,22 @@ router.post("/api/orders/:id/cancel", verifyToken, orderLimiter, async (req, res
     }
 
     const result = await cancelOrder(order.geminiOrderId);
-    order.status = result.status;
-    if (result.fillPrice !== undefined) {
-      order.fillPrice = result.fillPrice;
-      order.filledQty = result.filledQty;
-      order.filledAt = new Date();
-    }
-    await order.save();
+    // Conditional + atomic. An orderSync tick may have observed this order
+    // more recently than the cancel did (it can fill completely while the
+    // cancel is in flight); the newer observation must win regardless of
+    // which write lands second.
+    const updated = await applyObservation(order._id, {
+      status: result.status,
+      filledQty: result.filledQty ?? 0,
+      fillPrice: result.fillPrice,
+    });
     // Part of it executed before the cancel landed — balances moved.
     if (result.filledQty) {
       clearBalancesCache();
       void snapshotNow();
     }
-    res.json({ order });
+    // If a fresher observation won, report THAT state, not the one we lost with.
+    res.json({ order: updated ?? (await OrdersModel.findById(order._id)) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Failed to cancel order" });
