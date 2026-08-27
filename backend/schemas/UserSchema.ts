@@ -30,7 +30,7 @@ export const UserSchema = new Schema<IUser>({
 
 // Runs automatically RIGHT BEFORE a user is saved.
 // Only hashes when the password itself changed — otherwise any later
-// save() (e.g. after mutating balance) would hash the hash and
+// save() (e.g. after bumping tokenVersion) would hash the hash and
 // permanently lock the user out.
 export async function hashPasswordHook(this: {
   isModified(path: string): boolean;
