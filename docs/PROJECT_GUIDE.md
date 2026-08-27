@@ -354,18 +354,79 @@ services must sit under one registrable domain (`www.` / `app.` / `api.`) or
 the cookie will not be sent and login fails silently with 401s. The alternative
 is `sameSite: "none"` with `secure: true`, which widens CSRF exposure.
 
-**The migration is gated and destructive.** `migrate()` in `index.ts` runs only
-when `RUN_MIGRATIONS=true`, because the free-tier host restarts constantly. It
-drops legacy pre-pivot collections, `$unset`s removed user and order fields,
-and drops the legacy `userId_1_clientOrderId_1` index so the corrected partial
-index can be created.
+### The migration
 
-> That index drop is **load-bearing**. Mongoose's `autoIndex` recreates indexes
-> from the schema on boot, but MongoDB cannot change an existing index's
-> options — it rejects with `IndexOptionsConflict`, which mongoose reports on
-> the model's `index` event that nothing listens to. The app then boots
-> normally on the *old, broken* index with no visible error. A deploy that
-> skips `RUN_MIGRATIONS=true` looks successful and is not.
+`migrate()` in `index.ts` runs only when `RUN_MIGRATIONS=true`, because the
+free-tier host restarts constantly and the migration drops collections. It:
+
+1. `$unset`s the removed `balance` / `realizedPnl` fields, **through the raw
+   driver collection**. Through a mongoose Model this silently does nothing:
+   `strict` mode strips paths that are not in the schema from update
+   operators, and those fields were removed from the schemas in the pivot —
+   which is precisely why they are being unset. The update becomes empty, no
+   error is raised, and `modifiedCount` comes back `undefined`.
+2. Drops the legacy `userId_1_clientOrderId_1` index **only if it is actually
+   the legacy one**, so re-running never destroys a healthy index.
+3. Builds the schema's indexes explicitly and awaits them, rather than letting
+   mongoose's background `autoIndex` race the drop. If that race is lost, the
+   `createIndex` fails with `IndexOptionsConflict` — reported on an `index`
+   event nothing listens to — and the drop then leaves the collection with
+   **no uniqueness constraint at all**, silently.
+4. Verifies the partial index is in place afterwards and logs a loud error if
+   it is not.
+5. Drops legacy pre-pivot collections that still exist.
+
+It is idempotent and safe to run against a live database with resting orders:
+every step is conditional on current state, and nothing it touches overlaps
+the fields `orderSync` or the cancel route write.
+
+> A deploy that skips `RUN_MIGRATIONS=true` **looks successful and is not** —
+> the app boots normally on the old, broken index.
+
+### Deploy sequence for the index migration
+
+Run this once. It is the only deploy that needs the flag.
+
+**1 — Migrate.** Set `RUN_MIGRATIONS=true` in the service environment and
+deploy. Expect exactly this in the boot log:
+
+```
+migrate: cleared legacy fields from N user(s) and N order(s)
+migrate: dropped legacy sparse clientOrderId index
+migrate: clientOrderId partial index verified
+app started on port ...
+```
+
+If `migrate: FAILED` appears, stop. Do not clear the flag and do not take
+traffic — order idempotency is not in force.
+
+**2 — Verify the index independently.** Do not rely on the log alone:
+
+```js
+db.orders.getIndexes().find(i => i.name === "userId_1_clientOrderId_1")
+```
+
+It must show `unique: true` **and** `partialFilterExpression: { clientOrderId:
+{ $type: "string" } }`. If it shows `sparse: true`, the migration did not run.
+If it is missing entirely, the collection has no idempotency constraint —
+rebuild it before serving traffic.
+
+**3 — Confirm the behaviour** (optional, on a staging database only — it
+writes rows):
+
+```js
+// two orders with no clientOrderId must both insert
+// two orders with the SAME clientOrderId must reject the second
+```
+
+**4 — Clear the flag.** Unset `RUN_MIGRATIONS` and redeploy, so a restart
+cannot re-run a destructive migration unattended.
+
+**Known window:** between the drop and the rebuild there is a sub-second gap
+with no uniqueness constraint. The migrating instance is not serving yet
+(`migrate()` runs before `app.listen`), so it only matters if another instance
+is live during a rolling deploy. Even then the exposure is a duplicate row,
+not a double trade — Gemini dedupes on `client_order_id` independently.
 
 ---
 
