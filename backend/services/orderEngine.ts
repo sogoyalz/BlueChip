@@ -188,6 +188,14 @@ export async function placeOrder(
         `Gemini for user ${userId} but could not be persisted:`,
       err
     );
+    if (executed > 0) {
+      // The trade happened regardless of our write failing. Leaving the cached
+      // balance in place would serve a figure we already know is wrong to every
+      // /api/account and /api/holdings read until the TTL expires, and the
+      // snapshot series would skip the move entirely.
+      clearBalancesCache();
+      void snapshotNow();
+    }
     throw err;
   }
 

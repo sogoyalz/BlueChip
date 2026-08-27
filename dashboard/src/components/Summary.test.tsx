@@ -97,3 +97,37 @@ describe("Summary unknown-value handling", () => {
   });
 });
 
+describe("Summary chart with nothing to plot", () => {
+  test("does not draw a baseline from a portfolio value it does not have", async () => {
+    // No snapshot history AND a failed account load: the only number available
+    // to anchor a flat line is the 0 fallback. Drawing it asserts a value we
+    // never received, right below stat cards that correctly read "—".
+    mockedGet.mockImplementation((url: string) => {
+      if (url.includes("/api/holdings")) return Promise.resolve({ data: [] });
+      if (url.includes("/api/account")) return Promise.reject(new Error("down"));
+      return Promise.resolve({ data: { points: [] } });
+    });
+
+    const { container } = render(<Summary />);
+    await waitFor(() =>
+      expect(screen.getAllByText("—").length).toBeGreaterThan(0)
+    );
+
+    expect(container.querySelector("svg path")).toBeNull();
+    expect(screen.getByText(/no portfolio history/i)).toBeInTheDocument();
+  });
+
+  test("still draws a flat baseline when the current value IS known", async () => {
+    // One real number is enough to anchor an honest flat line.
+    mockedGet.mockImplementation((url: string) => {
+      if (url.includes("/api/holdings")) return Promise.resolve({ data: holdings });
+      if (url.includes("/api/account")) return Promise.resolve({ data: account });
+      return Promise.resolve({ data: { points: [] } });
+    });
+
+    const { container } = render(<Summary />);
+    await waitFor(() => expect(container.querySelector("svg path")).not.toBeNull());
+    expect(screen.queryByText(/no portfolio history/i)).not.toBeInTheDocument();
+  });
+});
+

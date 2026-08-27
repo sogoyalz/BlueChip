@@ -48,7 +48,12 @@ import { app } from "../index";
 import { UserModel } from "../model/UserModel";
 import { OrdersModel } from "../model/OrdersModel";
 import { getPrice, isFresh } from "../services/priceFeed";
-import { placeGeminiOrder, cancelGeminiOrder } from "../services/geminiPrivate";
+import {
+  placeGeminiOrder,
+  cancelGeminiOrder,
+  clearBalancesCache,
+} from "../services/geminiPrivate";
+import { snapshotNow } from "../services/snapshots";
 
 const mockedUser = UserModel as unknown as Record<string, jest.Mock>;
 const mockedOrders = OrdersModel as unknown as Record<string, jest.Mock>;
@@ -355,6 +360,39 @@ describe("POST /api/orders — idempotency (clientOrderId)", () => {
       qty: 0.1,
     });
     expect(res.status).toBe(500);
+  });
+
+  test("a persist failure AFTER the order executed still invalidates balances", async () => {
+    // The order is live on Gemini and 0.1 BTC has already changed hands; only
+    // the local write failed. Logging the orphan is not enough — the cached
+    // balance is now provably wrong, and every /api/account and /api/holdings
+    // read serves that wrong figure until the TTL expires. The snapshot series
+    // would also silently skip the trade.
+    mockedOrders.create.mockRejectedValueOnce(new Error("Mongo connection lost"));
+
+    const res = await authedPost().send({
+      symbol: "BTCUSD",
+      side: "BUY",
+      type: "MARKET",
+      qty: 0.1,
+    });
+
+    expect(res.status).toBe(500); // caller still sees the failure
+    expect(clearBalancesCache).toHaveBeenCalled();
+    expect(snapshotNow).toHaveBeenCalled();
+  });
+
+  test("a persist failure with NOTHING executed leaves balances alone", async () => {
+    // Nothing traded, so there is nothing to invalidate.
+    mockedPlaceGeminiOrder.mockResolvedValue(
+      geminiFill({ executed_amount: "0", remaining_amount: "0.1", avg_execution_price: "0" })
+    );
+    mockedOrders.create.mockRejectedValueOnce(new Error("Mongo connection lost"));
+
+    await authedPost().send({ symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 0.1 });
+
+    expect(clearBalancesCache).not.toHaveBeenCalled();
+    expect(snapshotNow).not.toHaveBeenCalled();
   });
 });
 

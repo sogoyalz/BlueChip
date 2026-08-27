@@ -45,6 +45,11 @@ const columns: Column<Holding>[] = [
 
 const Holdings = () => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  // Whether we have ever actually received holdings. An empty array is a real
+  // "no positions"; a failed request is "we don't know", and in a trading UI
+  // those must not render as the same thing. Sticky once true, so a failed
+  // background refresh doesn't blank a page that already has good data.
+  const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,7 +63,10 @@ const Holdings = () => {
           withCredentials: true,
         })
         .then((res) => {
-          if (!cancelled) setHoldings(res.data);
+          if (!cancelled) {
+            setHoldings(res.data);
+            setLoaded(true);
+          }
         })
         .catch((err) => {
           console.error("Failed to load holdings:", err);
@@ -101,7 +109,7 @@ const Holdings = () => {
 
   return (
     <>
-      <h3 className="title">Holdings ({holdings.length})</h3>
+      <h3 className="title">Holdings{loaded ? ` (${holdings.length})` : ""}</h3>
 
       <DataTable
         columns={columns}
@@ -110,12 +118,18 @@ const Holdings = () => {
         loading={loading}
         loadingLabel="Loading holdings…"
         emptyContent={
-          <EmptyState message="No holdings yet. Buy the first crypto from the watchlist." />
+          loaded ? (
+            <EmptyState message="No holdings yet. Buy the first crypto from the watchlist." />
+          ) : (
+            <EmptyState message="Couldn't load holdings. Retrying…" />
+          )
         }
       />
 
       <div className="row">
-        <StatCard label="Current value">{fmt$(totalCurrent)}</StatCard>
+        <StatCard label="Current value">
+          {loaded ? fmt$(totalCurrent) : "—"}
+        </StatCard>
       </div>
       <div className="panel chart-panel">
         <VerticalGraph data={data} />

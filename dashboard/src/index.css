@@ -1184,6 +1184,16 @@ input:focus-visible {
   background: var(--accent-soft);
 }
 
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.85rem;
+}
+
 .chart-body {
   margin-top: 14px;
   height: 260px;

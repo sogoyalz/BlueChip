@@ -103,9 +103,16 @@ const Summary = () => {
   const dayPct = prevPortfolioValue > 0 ? (dayPL / prevPortfolioValue) * 100 : 0;
 
   // Real snapshot history; a brand-new account renders a flat baseline.
+  // Returns null when there is nothing honest to draw.
   const chart = useMemo(() => {
     let series = history.map((p) => p.value);
     if (series.length < 2) {
+      // With no recorded history, the only thing we can draw is a flat line at
+      // the current value — which is only honest if we actually know it. When
+      // the account load failed, portfolioValue is a 0 fallback, and drawing
+      // that asserts a figure we never received, directly under stat cards
+      // that correctly read "—".
+      if (!accountKnown) return null;
       const v = series[0] ?? portfolioValue;
       series = [v, v];
     }
@@ -118,9 +125,9 @@ const Summary = () => {
       ly,
       up: series[series.length - 1] >= series[0],
     };
-  }, [history, portfolioValue]);
+  }, [history, portfolioValue, accountKnown]);
 
-  const stroke = chart.up ? "#00c853" : "#ff5252"; // --gain / --loss
+  const stroke = chart?.up ? "#00c853" : "#ff5252"; // --gain / --loss
 
   const dateStr = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -188,6 +195,11 @@ const Summary = () => {
           </div>
         </div>
         <div className="chart-body">
+          {chart === null ? (
+            <p className="chart-empty">
+              No portfolio history to show yet.
+            </p>
+          ) : (
           <svg viewBox={`0 0 ${CW} ${CH}`} preserveAspectRatio="none">
             <defs>
               <linearGradient id="pf-fill" x1="0" y1="0" x2="0" y2="1">
@@ -209,6 +221,7 @@ const Summary = () => {
             />
             <circle cx={chart.lx} cy={chart.ly} r="4.5" fill={stroke} stroke="#131316" strokeWidth="2.5" />
           </svg>
+          )}
         </div>
       </div>
     </>
