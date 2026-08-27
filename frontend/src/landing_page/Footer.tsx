@@ -28,21 +28,6 @@ function Footer() {
               <li>
                 <Link to="/pricing">Pricing</Link>
               </li>
-              <li>
-                <Link to="/product">Referral programme</Link>
-              </li>
-              <li>
-                <Link to="/about">Careers</Link>
-              </li>
-              <li>
-                <Link to="/about">Engineering blog</Link>
-              </li>
-              <li>
-                <Link to="/about">Press &amp; media</Link>
-              </li>
-              <li>
-                <Link to="/about">BlueChip cares (CSR)</Link>
-              </li>
             </ul>
           </div>
           <div className="col-6 col-md-3">
@@ -55,13 +40,7 @@ function Footer() {
                 <Link to="/support">Support portal</Link>
               </li>
               <li>
-                <Link to="/support">BlueChip Learn</Link>
-              </li>
-              <li>
                 <Link to="/pricing">List of charges</Link>
-              </li>
-              <li>
-                <Link to="/support">Downloads &amp; resources</Link>
               </li>
             </ul>
           </div>
@@ -70,9 +49,6 @@ function Footer() {
             <ul className="footer-links">
               <li>
                 <Link to="/signup">Open an account</Link>
-              </li>
-              <li>
-                <Link to="/signup">Fund transfer</Link>
               </li>
               <li>
                 <Link to="/login">Login</Link>

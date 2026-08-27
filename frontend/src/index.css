@@ -559,6 +559,53 @@ select:focus-visible {
   max-width: 900px;
 }
 
+/* About — factual band under the statement, and column headings, so the page
+   has structure instead of two slabs of prose. */
+.about-facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-4, 16px);
+  padding: var(--sp-6, 32px) 0;
+}
+
+.about-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 16px;
+  border-left: 2px solid var(--border);
+}
+
+.about-fact-value {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.about-fact-label {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+.prose-heading {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: var(--sp-4, 16px);
+}
+
+@media (max-width: 767px) {
+  .about-facts {
+    grid-template-columns: repeat(2, 1fr);
+    row-gap: var(--sp-5, 24px);
+  }
+}
+
 .about-statement {
   font-size: clamp(1.5rem, 3vw, 2.1rem);
   line-height: 1.4;

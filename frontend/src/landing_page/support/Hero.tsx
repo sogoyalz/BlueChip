@@ -5,36 +5,36 @@ function Hero() {
   return (
     <section className="container-fluid" id="supportHero">
       <div className="p-5" id="supportWrapper">
-        <h4>Support Portal</h4>
-        <Link className="btn btn-ghost btn-sm" to="/support">
-          Track Tickets
+        <h4>Help centre</h4>
+        <Link className="btn btn-ghost btn-sm" to="/signup">
+          Open an account
         </Link>
       </div>
       <div className="row p-5 m-3 gy-4">
         <div className="col-md-6 p-3">
           <h1 className="fs-3 mb-4">
-            Search for an answer or browse help topics to create a ticket
+            How BlueChip works, from prices to fills
           </h1>
-          <input
-            placeholder="E.g. how do limit orders fill?"
-            className="mb-4"
-          />
+          <p className="section-lede mb-4">
+            Everything here is about one shared sandbox account trading at live
+            Gemini prices. Start with a topic below.
+          </p>
           <div className="chip-row">
-            <a href="#createTicket">Where prices come from</a>
-            <a href="#createTicket">Limit orders</a>
-            <a href="#createTicket">Terminal user guide</a>
+            <a href="#helpTopics">Where prices come from</a>
+            <a href="#helpTopics">Limit orders</a>
+            <a href="#helpTopics">Terminal user guide</a>
           </div>
         </div>
         <div className="col-md-6 p-3">
-          <h1 className="fs-3 mb-4">Featured</h1>
+          <h1 className="fs-3 mb-4">Start here</h1>
           <ol>
             <li className="mb-2">
-              <a href="#createTicket">
+              <a href="#helpTopics">
                 How limit orders rest and fill on Gemini's sandbox exchange
               </a>
             </li>
             <li>
-              <a href="#createTicket">
+              <a href="#helpTopics">
                 Why every trader shares the same sandbox account
               </a>
             </li>

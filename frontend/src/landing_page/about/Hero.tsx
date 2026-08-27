@@ -11,9 +11,29 @@ function Hero() {
           So we built a real exchange where the money isn't.
         </h1>
       </div>
+      <div className="about-facts">
+        <div className="about-fact">
+          <span className="about-fact-value">8</span>
+          <span className="about-fact-label">cryptocurrencies, live from Gemini</span>
+        </div>
+        <div className="about-fact">
+          <span className="about-fact-value">1</span>
+          <span className="about-fact-label">shared sandbox account</span>
+        </div>
+        <div className="about-fact">
+          <span className="about-fact-value">$0</span>
+          <span className="about-fact-label">real money at risk, ever</span>
+        </div>
+        <div className="about-fact">
+          <span className="about-fact-value">100%</span>
+          <span className="about-fact-label">TypeScript, end to end</span>
+        </div>
+      </div>
+
       <div className="row section border-top gy-4">
         <div className="col-md-6 pe-md-5">
           <div className="prose">
+            <h2 className="prose-heading">Why it exists</h2>
             <p>
               BlueChip started with a simple frustration: you can read a
               hundred articles about limit orders and still freeze the first
@@ -36,6 +56,7 @@ function Hero() {
         </div>
         <div className="col-md-6 ps-md-5">
           <div className="prose">
+            <h2 className="prose-heading">How it's built</h2>
             <p>
               We are a technology project at heart. The entire platform is
               built end-to-end in TypeScript — the streaming price feed, the
