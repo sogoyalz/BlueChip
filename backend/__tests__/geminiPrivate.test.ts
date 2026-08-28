@@ -158,3 +158,98 @@ describe("request timeouts", () => {
     expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
 });
+
+describe("retry policy", () => {
+  const okJson = (body: unknown) => ({ ok: true, json: async () => body });
+  const fail = (status: number) => ({ ok: false, status, json: async () => ({}) });
+  const balances = [
+    { currency: "USD", amount: "100", available: "100", availableForWithdrawal: "100" },
+  ];
+
+  test("a read retries once past a 5xx and succeeds", async () => {
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValueOnce(fail(503))
+      .mockResolvedValueOnce(okJson(balances));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await expect(getGeminiBalances()).resolves.toEqual(balances);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("a read retries once past a network failure", async () => {
+    const mockFetch = jest
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error("timed out"), { name: "TimeoutError" }))
+      .mockResolvedValueOnce(okJson([{ order_id: "1" }]));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiActiveOrders } = require("../services/geminiPrivate");
+    await expect(getGeminiActiveOrders()).resolves.toEqual([{ order_id: "1" }]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("a read gives up after one retry rather than hammering", async () => {
+    const mockFetch = jest.fn().mockResolvedValue(fail(503));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await expect(getGeminiBalances()).rejects.toThrow(/responded 503/);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("a read does NOT retry a 4xx — it is a decision, not a blip", async () => {
+    const mockFetch = jest.fn().mockResolvedValue(fail(400));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await expect(getGeminiBalances()).rejects.toThrow(/responded 400/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("each attempt re-signs with a fresh nonce", async () => {
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValueOnce(fail(503))
+      .mockResolvedValueOnce(okJson(balances));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await getGeminiBalances();
+
+    const nonceOf = (call: number) =>
+      JSON.parse(
+        Buffer.from(
+          mockFetch.mock.calls[call][1].headers["X-GEMINI-PAYLOAD"],
+          "base64",
+        ).toString(),
+      ).nonce;
+    // Gemini rejects a reused nonce, so a retry that replayed the first
+    // payload would fail for a second, more confusing reason.
+    expect(nonceOf(1)).toBeGreaterThan(nonceOf(0));
+    expect(mockFetch.mock.calls[1][1].headers["X-GEMINI-SIGNATURE"]).not.toBe(
+      mockFetch.mock.calls[0][1].headers["X-GEMINI-SIGNATURE"],
+    );
+  });
+
+  test("placing an order is NEVER retried — a repeat risks a second fill", async () => {
+    const mockFetch = jest.fn().mockResolvedValue(fail(503));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { placeGeminiOrder } = require("../services/geminiPrivate");
+    await expect(
+      placeGeminiOrder({ symbol: "btcusd", amount: "1", price: "100", side: "buy" }),
+    ).rejects.toThrow(/responded 503/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("cancelling an order is NEVER retried", async () => {
+    const mockFetch = jest.fn().mockResolvedValue(fail(503));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { cancelGeminiOrder } = require("../services/geminiPrivate");
+    await expect(cancelGeminiOrder("123")).rejects.toThrow(/responded 503/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+});

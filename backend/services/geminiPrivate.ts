@@ -63,7 +63,19 @@ function nextNonce(): number {
   return nonce;
 }
 
-async function geminiPrivatePost<T>(
+/**
+ * Carries the HTTP status so the retry policy can tell a transient failure
+ * from a refusal. The message is unchanged from before this class existed.
+ */
+class GeminiHttpError extends Error {
+  constructor(readonly status: number, path: string) {
+    super(`Gemini ${path} responded ${status}`);
+    this.name = "GeminiHttpError";
+  }
+}
+
+/** One signed attempt. Every call mints a new nonce — Gemini rejects reuse. */
+async function signedPost<T>(
   path: string,
   params: Record<string, unknown> = {}
 ): Promise<T> {
@@ -92,9 +104,45 @@ async function geminiPrivatePost<T>(
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
-    throw new Error(`Gemini ${path} responded ${res.status}`);
+    throw new GeminiHttpError(res.status, path);
   }
   return (await res.json()) as T;
+}
+
+const RETRY_DELAY_MS = 250;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A signed request, optionally retried.
+ *
+ * `retries` is opt-in and deliberately stays at 0 for /v1/order/new and
+ * /v1/order/cancel: repeating a write risks a second fill, and the idempotency
+ * key plus a clear 504 is the right answer there instead. The read paths carry
+ * no such risk — a balance or order-status fetch that fails on a transient
+ * blip currently surfaces to the user as a 500 for no good reason.
+ *
+ * Each attempt re-signs from scratch, because the nonce cannot be reused.
+ */
+async function geminiPrivatePost<T>(
+  path: string,
+  params: Record<string, unknown> = {},
+  { retries = 0 }: { retries?: number } = {}
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await signedPost<T>(path, params);
+    } catch (err) {
+      lastErr = err;
+      // A 4xx is a decision, not a blip. Repeating it changes nothing and
+      // burns a nonce.
+      const status = err instanceof GeminiHttpError ? err.status : undefined;
+      if (status !== undefined && status < 500) throw err;
+      if (attempt >= retries) break;
+      await sleep(RETRY_DELAY_MS);
+    }
+  }
+  throw lastErr;
 }
 
 export interface PlaceGeminiOrderInput {
@@ -134,15 +182,17 @@ export async function cancelGeminiOrder(
  * that absence is what tells orderSync which orders need an individual lookup.
  */
 export async function getGeminiActiveOrders(): Promise<GeminiOrderResponse[]> {
-  return geminiPrivatePost<GeminiOrderResponse[]>("/v1/orders");
+  return geminiPrivatePost<GeminiOrderResponse[]>("/v1/orders", {}, { retries: 1 });
 }
 
 export async function getGeminiOrderStatus(
   orderId: string
 ): Promise<GeminiOrderResponse> {
-  return geminiPrivatePost<GeminiOrderResponse>("/v1/order/status", {
-    order_id: orderId,
-  });
+  return geminiPrivatePost<GeminiOrderResponse>(
+    "/v1/order/status",
+    { order_id: orderId },
+    { retries: 1 },
+  );
 }
 
 // Balances change only when an order fills, but /api/account and /api/holdings
@@ -164,7 +214,7 @@ export async function getGeminiBalances(): Promise<GeminiBalance[]> {
   if (balancesInFlight) return balancesInFlight; // fold into the in-flight fetch
   const gen = balancesGeneration;
   let inFlight: Promise<GeminiBalance[]>;
-  inFlight = geminiPrivatePost<GeminiBalance[]>("/v1/balances")
+  inFlight = geminiPrivatePost<GeminiBalance[]>("/v1/balances", {}, { retries: 1 })
     .then((data) => {
       // Stale by the time it landed (a fill cleared the cache meanwhile) —
       // hand the data to this caller but don't cache it.
