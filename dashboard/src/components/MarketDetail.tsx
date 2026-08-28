@@ -139,7 +139,7 @@ const MarketDetail = () => {
           {loading ? (
             <Skeleton label="Loading chart…" />
           ) : (
-            <CandleChart candles={visibleCandles} />
+            <CandleChart candles={visibleCandles} label={info?.base ?? pair} />
           )}
         </div>
       </div>

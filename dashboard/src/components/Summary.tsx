@@ -5,7 +5,7 @@ import { toast } from "react-toastify";
 import PnLValue from "./shared/PnLValue";
 import StatCard from "./shared/StatCard";
 import { linePath } from "./shared/chartPath";
-import { usdAbs, signedUsd, pct } from "./shared/format";
+import { usd, usdAbs, signedUsd, pct } from "./shared/format";
 import { Account, Holding } from "../types";
 import { API_URL } from "../config";
 
@@ -117,8 +117,27 @@ const Summary = () => {
       lx,
       ly,
       up: series[series.length - 1] >= series[0],
+      series,
     };
   }, [history, portfolioValue, accountKnown]);
+
+  // The chart is a bare <svg> of two paths: without this a screen reader is
+  // told there is a graphic and nothing about what it shows.
+  const chartDescription = useMemo(() => {
+    if (!chart) return "";
+    const { series } = chart;
+    const first = series[0];
+    const last = series[series.length - 1];
+    const change = last - first;
+    const direction = change > 0 ? "up" : change < 0 ? "down" : "flat";
+    const pctText =
+      first > 0 ? ` (${((Math.abs(change) / first) * 100).toFixed(2)}%)` : "";
+    return series.length < 2 || first === last
+      ? `Portfolio value over ${range}: flat at ${usd(last)}. Not enough history to plot a trend yet.`
+      : `Portfolio value over ${range}: ${usd(first)} to ${usd(last)}, ` +
+          `${direction} ${usd(Math.abs(change))}${pctText}. ` +
+          `Low ${usd(Math.min(...series))}, high ${usd(Math.max(...series))}.`;
+  }, [chart, range]);
 
   const stroke = chart?.up ? "#00c853" : "#ff5252"; // --gain / --loss
 
@@ -201,7 +220,12 @@ const Summary = () => {
               No portfolio history to show yet.
             </p>
           ) : (
-          <svg viewBox={`0 0 ${CW} ${CH}`} preserveAspectRatio="none">
+          <svg
+            viewBox={`0 0 ${CW} ${CH}`}
+            preserveAspectRatio="none"
+            role="img"
+            aria-label={chartDescription}
+          >
             <defs>
               <linearGradient id="pf-fill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={stroke} stopOpacity="0.25" />

@@ -9,6 +9,8 @@ import {
 } from "chart.js";
 import { Doughnut } from "react-chartjs-2";
 
+import { describeCategoryChart } from "./shared/describeChart";
+
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 // Canvas can't resolve CSS vars — these mirror the index.css tokens.
@@ -41,5 +43,17 @@ const options: ChartOptions<"doughnut"> = {
 };
 
 export function DoughnutChart({ data }: { data: ChartData<"doughnut"> }) {
-  return <Doughnut data={data} options={options} />;
+  const description = describeCategoryChart(
+    data,
+    "Watchlist 24-hour price movement",
+    (v) => `${v.toFixed(2)} percent`,
+  );
+  return (
+    <Doughnut
+      data={data}
+      options={options}
+      role="img"
+      aria-label={description}
+    />
+  );
 }
