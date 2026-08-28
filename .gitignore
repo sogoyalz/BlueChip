@@ -30,3 +30,6 @@ logs/
 .vscode/
 .idea/
 
+
+# mongodb-memory-server binaries (downloaded on demand)
+.mongodb-binaries/
