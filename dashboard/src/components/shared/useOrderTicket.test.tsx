@@ -14,29 +14,30 @@ import { toast } from "react-toastify";
 import { useOrderTicket } from "./useOrderTicket";
 import GeneralContext from "../GeneralContext";
 import PricesContext from "../PricesContext";
+import type { Mock } from "vitest";
 
-jest.mock("axios", () => ({
+vi.mock("axios", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn(), isAxiosError: jest.fn() },
+  default: { get: vi.fn(), post: vi.fn(), isAxiosError: vi.fn() },
 }));
-jest.mock("react-toastify", () => ({
-  toast: { error: jest.fn(), success: jest.fn(), info: jest.fn() },
+vi.mock("react-toastify", () => ({
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 
-const mockedGet = axios.get as jest.Mock;
-const mockedPost = axios.post as jest.Mock;
-const closeTradeWindow = jest.fn();
-const notifyOrderPlaced = jest.fn();
+const mockedGet = axios.get as Mock;
+const mockedPost = axios.post as Mock;
+const closeTradeWindow = vi.fn();
+const notifyOrderPlaced = vi.fn();
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <GeneralContext.Provider
     value={{
-      openTradeWindow: jest.fn(),
+      openTradeWindow: vi.fn(),
       closeTradeWindow,
       orderVersion: 0,
       notifyOrderPlaced,
-      openBuyWindow: jest.fn(),
-      closeBuyWindow: jest.fn(),
+      openBuyWindow: vi.fn(),
+      closeBuyWindow: vi.fn(),
     }}
   >
     <PricesContext.Provider
@@ -55,9 +56,9 @@ const setup = () => renderHook(() => useOrderTicket("BTCUSD", "BUY"), { wrapper 
 const orderBody = (call = 0) => mockedPost.mock.calls[call][1];
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockedGet.mockResolvedValue({ data: { balance: 100000 } });
-  (axios.isAxiosError as unknown as jest.Mock).mockReturnValue(false);
+  (axios.isAxiosError as unknown as Mock).mockReturnValue(false);
 });
 
 describe("validation", () => {
@@ -159,7 +160,7 @@ describe("server outcomes", () => {
     act(() => result.current.setQty("1"));
     await act(async () => { await result.current.submit(); });
 
-    expect((toast as unknown as Record<string, jest.Mock>)[kind]).toHaveBeenCalled();
+    expect((toast as unknown as Record<string, Mock>)[kind]).toHaveBeenCalled();
     expect(notifyOrderPlaced).toHaveBeenCalledTimes(1); // the list must refresh either way
     if (closes) expect(closeTradeWindow).toHaveBeenCalled();
     else expect(closeTradeWindow).not.toHaveBeenCalled();
@@ -186,7 +187,7 @@ describe("server outcomes", () => {
   });
 
   test("the backend's own message is surfaced when it sends one", async () => {
-    (axios.isAxiosError as unknown as jest.Mock).mockReturnValue(true);
+    (axios.isAxiosError as unknown as Mock).mockReturnValue(true);
     mockedPost.mockRejectedValue({ response: { data: { message: "Market data unavailable" } } });
     const { result } = setup();
     act(() => result.current.setQty("1"));

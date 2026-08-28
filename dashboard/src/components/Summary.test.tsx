@@ -3,17 +3,18 @@ import { render, screen, waitFor } from "@testing-library/react";
 import axios from "axios";
 
 import Summary from "./Summary";
+import type { Mock } from "vitest";
 
-jest.mock("axios", () => ({
+vi.mock("axios", () => ({
   __esModule: true,
-  default: { get: jest.fn() },
+  default: { get: vi.fn() },
 }));
 
-jest.mock("react-toastify", () => ({
-  toast: { error: jest.fn(), success: jest.fn() },
+vi.mock("react-toastify", () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-const mockedGet = axios.get as jest.Mock;
+const mockedGet = axios.get as Mock;
 
 // $10k of holdings up 5% today, sitting next to $90k of idle cash.
 const holdings = [{ symbol: "BTCUSD", qty: 0.2, price: 50000, dayChangePct: 5 }];
@@ -31,7 +32,7 @@ const routeGet = (url: string) => {
 };
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockedGet.mockImplementation(routeGet);
 });
 

@@ -3,17 +3,18 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import axios from 'axios';
 import LiveTicker from '../home/LiveTicker';
+import type { Mock } from "vitest";
 
-jest.mock('axios', () => ({
+vi.mock('axios', () => ({
     __esModule: true,
-    default: { get: jest.fn() },
+    default: { get: vi.fn() },
 }));
 
-const mockedGet = axios.get as jest.Mock;
+const mockedGet = axios.get as Mock;
 
 describe('LiveTicker Component', () => {
     beforeEach(() => {
-        jest.clearAllMocks();
+        vi.clearAllMocks();
     });
 
     test("renders live prices after a successful fetch", async () => {
@@ -51,11 +52,11 @@ describe('LiveTicker Component', () => {
     });
 
     test("flashes a pill up/down when its price changes between polls", async () => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
         // Advance the poll interval, then let the fetch promise settle.
         const tick = async (ms: number) => {
             await act(async () => {
-                jest.advanceTimersByTime(ms);
+                vi.advanceTimersByTime(ms);
                 await Promise.resolve();
                 await Promise.resolve();
             });
@@ -100,7 +101,7 @@ describe('LiveTicker Component', () => {
             expect(screen.getByText('BTC').closest('.ticker-pill'))
                 .not.toHaveAttribute('data-flash');
         } finally {
-            jest.useRealTimers();
+            vi.useRealTimers();
         }
     });
 });

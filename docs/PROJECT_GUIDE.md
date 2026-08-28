@@ -99,17 +99,18 @@ domains breaks login silently — see §7.
 | Jest + ts-jest + supertest | Tests drive the real Express app in-process with models and the Gemini client mocked, so the suite needs no database and no network. |
 
 ### Dashboard
-React 19 + TypeScript (Create React App), Material UI for tooltips/icons,
+React 19 + TypeScript on Vite, Material UI for tooltips/icons,
 Chart.js 4 with `chartjs-chart-financial` for candlesticks, axios,
 react-toastify, react-router 7.
 
 ### Frontend
-React 19 + TypeScript (CRA) + Bootstrap.
+React 19 + TypeScript on Vite + Bootstrap.
 
-> **Known constraint:** both React apps are on `react-scripts`, which is
-> unmaintained. They carry build-toolchain audit findings that cannot be
-> resolved without migrating off CRA. Nothing ships to the browser from those
-> packages, but the exposure is real and is tracked separately.
+Both apps build with Vite and test with Vitest. They were on Create React App
+until it was retired here: `react-scripts` is unmaintained and carried 28
+build-toolchain audit findings apiece that no version bump could clear. None
+of it ever shipped to the browser, but it made `npm audit` useless as a gate
+and pinned the dependency tree behind `--legacy-peer-deps`. Both are gone.
 
 ---
 
@@ -488,8 +489,10 @@ Optional:
 | `GEMINI_API_URL` / `GEMINI_WS_URL` | production public API | Public market-data overrides |
 | `GEMINI_PRIVATE_API_URL` | sandbox | Must contain `sandbox` or the app refuses to boot |
 
-Dashboard and frontend read `REACT_APP_API_URL`, `REACT_APP_LOGIN_URL`, and
-`REACT_APP_DASHBOARD_URL` at build time.
+Dashboard and frontend read `VITE_API_URL`, `VITE_LOGIN_URL`, and
+`VITE_DASHBOARD_URL` at build time. The old `REACT_APP_*` names are still
+honoured, so an environment configured before the move off Create React App
+keeps working unchanged.
 
 ---
 

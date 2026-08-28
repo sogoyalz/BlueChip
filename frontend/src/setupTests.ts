@@ -1,3 +1,3 @@
 // jest-dom adds custom matchers like toBeInTheDocument().
-// CRA automatically loads this file before each test.
-import '@testing-library/jest-dom';
+// Loaded via `setupFiles` in vite.config.ts.
+import "@testing-library/jest-dom";

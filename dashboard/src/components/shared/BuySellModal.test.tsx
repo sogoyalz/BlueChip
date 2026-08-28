@@ -6,34 +6,35 @@ import { toast } from "react-toastify";
 import BuySellModal from "./BuySellModal";
 import GeneralContext from "../GeneralContext";
 import PricesContext from "../PricesContext";
+import type { Mock } from "vitest";
 
-jest.mock("axios", () => ({
+vi.mock("axios", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn(), isAxiosError: jest.fn() },
+  default: { get: vi.fn(), post: vi.fn(), isAxiosError: vi.fn() },
 }));
 
-jest.mock("react-toastify", () => ({
-  toast: { error: jest.fn(), success: jest.fn(), info: jest.fn() },
+vi.mock("react-toastify", () => ({
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 
-const mockedGet = axios.get as jest.Mock;
-const mockedPost = axios.post as jest.Mock;
-const mockedIsAxiosError = axios.isAxiosError as unknown as jest.Mock;
-const mockedToastError = toast.error as jest.Mock;
-const mockedToastSuccess = toast.success as jest.Mock;
-const mockedToastInfo = toast.info as jest.Mock;
+const mockedGet = axios.get as Mock;
+const mockedPost = axios.post as Mock;
+const mockedIsAxiosError = axios.isAxiosError as unknown as Mock;
+const mockedToastError = toast.error as Mock;
+const mockedToastSuccess = toast.success as Mock;
+const mockedToastInfo = toast.info as Mock;
 
-const closeTradeWindow = jest.fn();
-const notifyOrderPlaced = jest.fn();
+const closeTradeWindow = vi.fn();
+const notifyOrderPlaced = vi.fn();
 
 const renderModal = () =>
   render(
     <GeneralContext.Provider
       value={{
-        openTradeWindow: jest.fn(),
+        openTradeWindow: vi.fn(),
         closeTradeWindow,
-        openBuyWindow: jest.fn(),
-        closeBuyWindow: jest.fn(),
+        openBuyWindow: vi.fn(),
+        closeBuyWindow: vi.fn(),
         orderVersion: 0,
         notifyOrderPlaced,
       }}
@@ -61,7 +62,7 @@ const enterLimitPrice = (value: string) => {
 const clickBuy = () => fireEvent.click(screen.getByRole("button", { name: /^buy$/i }));
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockedGet.mockResolvedValue({ data: { balance: 100000 } });
   mockedIsAxiosError.mockReturnValue(false);
 });

@@ -3,23 +3,24 @@ import { render, screen } from "@testing-library/react";
 import axios from "axios";
 import { toast } from "react-toastify";
 import Holdings from "./Holdings";
+import type { Mock } from "vitest";
 
-jest.mock("axios", () => ({
+vi.mock("axios", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn() },
+  default: { get: vi.fn(), post: vi.fn() },
 }));
 
-jest.mock("react-toastify", () => ({
-  toast: { error: jest.fn(), success: jest.fn() },
+vi.mock("react-toastify", () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
 }));
 
 // chart.js needs a real canvas; the graph isn't under test here.
-jest.mock("./VerticalGraph", () => ({
+vi.mock("./VerticalGraph", () => ({
   VerticalGraph: () => <div data-testid="vertical-graph" />,
 }));
 
-const mockedGet = axios.get as jest.Mock;
-const mockedToastError = toast.error as unknown as jest.Mock;
+const mockedGet = axios.get as Mock;
+const mockedToastError = toast.error as unknown as Mock;
 
 const holdings = [
   { symbol: "BTCUSD", qty: 2, price: 150, dayChangePct: -1.6 },
@@ -30,7 +31,7 @@ const renderHoldings = () => render(<Holdings />);
 
 describe("Holdings", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test("shows a loading row while the request is in flight", () => {

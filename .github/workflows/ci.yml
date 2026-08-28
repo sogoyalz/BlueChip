@@ -46,12 +46,10 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: dashboard/package-lock.json
-      # CRA's react-scripts pins peer deps behind React 19 — repo convention
-      - run: npm ci --legacy-peer-deps
+      - run: npm ci
       - run: npx tsc --noEmit
-      - run: npm test -- --watchAll=false
-        env:
-          CI: "true"
+      - run: npm test
+      - run: npx vite build
 
   frontend:
     runs-on: ubuntu-latest
@@ -65,11 +63,10 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci --legacy-peer-deps
+      - run: npm ci
       - run: npx tsc --noEmit
-      - run: npm test -- --watchAll=false
-        env:
-          CI: "true"
+      - run: npm test
+      - run: npx vite build
 
   e2e:
     # The browser journey needs the backend compiled and both React apps
@@ -90,8 +87,8 @@ jobs:
       - name: Install
         run: |
           npm ci --prefix backend
-          npm ci --legacy-peer-deps --prefix dashboard
-          npm ci --legacy-peer-deps --prefix frontend
+          npm ci --prefix dashboard
+          npm ci --prefix frontend
           npm ci --prefix e2e
       # The suite runs the compiled backend, not ts-node.
       - name: Build backend

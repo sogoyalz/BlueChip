@@ -9,20 +9,20 @@ import { render, screen } from "@testing-library/react";
 import CandleChart from "./CandleChart";
 import { Candle } from "../../types";
 
-jest.mock("react-chartjs-2", () => ({
+vi.mock("react-chartjs-2", () => ({
   Chart: (props: Record<string, unknown>) => <canvas {...props} />,
 }));
 
 // The chart plumbing ships ESM that CRA's jest transform does not process,
 // and registering real controllers has nothing to do with the description
 // under test — only the aria-label matters here.
-jest.mock("chartjs-adapter-date-fns", () => ({}));
-jest.mock("chartjs-chart-financial", () => ({
+vi.mock("chartjs-adapter-date-fns", () => ({}));
+vi.mock("chartjs-chart-financial", () => ({
   CandlestickController: class {},
   CandlestickElement: class {},
 }));
-jest.mock("chart.js", () => ({
-  Chart: { register: jest.fn() },
+vi.mock("chart.js", () => ({
+  Chart: { register: vi.fn() },
   LinearScale: class {},
   TimeScale: class {},
   Tooltip: class {},

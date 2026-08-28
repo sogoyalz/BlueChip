@@ -75,9 +75,9 @@ function buildApp(name: "frontend" | "dashboard", env: Record<string, string>) {
   }
 
   process.stdout.write(`[e2e] building ${name}…\n`);
-  const result = spawnSync("npx", ["react-scripts", "build"], {
+  const result = spawnSync("npx", ["vite", "build", "--outDir", outDir, "--emptyOutDir"], {
     cwd: path.join(ROOT, name),
-    env: { ...process.env, ...env, CI: "true", BUILD_PATH: outDir },
+    env: { ...process.env, ...env, CI: "true" },
     stdio: "pipe",
     encoding: "utf8",
   });

@@ -3,20 +3,21 @@ import { render, screen, act } from "@testing-library/react";
 import axios from "axios";
 
 import { PricesProvider, usePrices } from "./PricesContext";
+import type { Mock } from "vitest";
 
-jest.mock("axios", () => ({
+vi.mock("axios", () => ({
   __esModule: true,
-  default: { get: jest.fn(), defaults: { headers: { common: {} } } },
+  default: { get: vi.fn(), defaults: { headers: { common: {} } } },
 }));
 
-const mockedGet = axios.get as jest.Mock;
+const mockedGet = axios.get as Mock;
 
 // Minimal stand-in for the browser's EventSource so we can drive the stream.
 class FakeEventSource {
   static last: FakeEventSource | null = null;
   listeners: Record<string, (e: unknown) => void> = {};
   onerror: (() => void) | null = null;
-  close = jest.fn();
+  close = vi.fn();
 
   constructor(public url: string) {
     FakeEventSource.last = this;
@@ -42,15 +43,15 @@ const Probe = () => {
 const tick = { price: 50000, changePct24h: 1, updatedAt: Date.now(), source: "ws" as const };
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  jest.useFakeTimers();
+  vi.clearAllMocks();
+  vi.useFakeTimers();
   FakeEventSource.last = null;
   (global as unknown as { EventSource: unknown }).EventSource = FakeEventSource;
   mockedGet.mockResolvedValue({ data: [] }); // /api/symbols
 });
 
 afterEach(() => {
-  jest.useRealTimers();
+  vi.useRealTimers();
 });
 
 describe("stale DATA, as opposed to a stale stream", () => {
@@ -145,7 +146,7 @@ describe("PricesContext staleness", () => {
     expect(screen.getByTestId("stale")).toHaveTextContent("false");
 
     act(() => {
-      jest.advanceTimersByTime(20_000); // > STALE_AFTER_MS with no new frame
+      vi.advanceTimersByTime(20_000); // > STALE_AFTER_MS with no new frame
     });
 
     expect(screen.getByTestId("stale")).toHaveTextContent("true");
@@ -161,7 +162,7 @@ describe("PricesContext staleness", () => {
     );
     act(() => FakeEventSource.last!.emit("prices", { prices: { BTCUSD: tick } }));
     act(() => {
-      jest.advanceTimersByTime(20_000);
+      vi.advanceTimersByTime(20_000);
     });
     expect(screen.getByTestId("stale")).toHaveTextContent("true");
 

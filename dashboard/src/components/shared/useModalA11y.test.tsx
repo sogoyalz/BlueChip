@@ -35,21 +35,21 @@ const tab = (shift = false) =>
 
 describe("useModalA11y", () => {
   it("moves focus into the modal on open", () => {
-    render(<Modal onDismiss={jest.fn()} />);
+    render(<Modal onDismiss={vi.fn()} />);
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "first" }),
     );
   });
 
   it("honours an explicit initial focus target", () => {
-    render(<Modal onDismiss={jest.fn()} focusLast />);
+    render(<Modal onDismiss={vi.fn()} focusLast />);
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "last" }),
     );
   });
 
   it("wraps Tab from the last element back to the first", () => {
-    render(<Modal onDismiss={jest.fn()} focusLast />);
+    render(<Modal onDismiss={vi.fn()} focusLast />);
     tab();
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "first" }),
@@ -57,7 +57,7 @@ describe("useModalA11y", () => {
   });
 
   it("wraps Shift+Tab from the first element to the last", () => {
-    render(<Modal onDismiss={jest.fn()} />);
+    render(<Modal onDismiss={vi.fn()} />);
     tab(true);
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "last" }),
@@ -65,7 +65,7 @@ describe("useModalA11y", () => {
   });
 
   it("skips elements that opted out with tabindex -1", () => {
-    render(<Modal onDismiss={jest.fn()} />);
+    render(<Modal onDismiss={vi.fn()} />);
     tab(true);
     // Last tabbable is the button, not the readonly input that follows nothing.
     expect(document.activeElement).not.toBe(screen.getByLabelText("readonly"));
@@ -75,7 +75,7 @@ describe("useModalA11y", () => {
     render(
       <>
         <button type="button">outside</button>
-        <Modal onDismiss={jest.fn()} />
+        <Modal onDismiss={vi.fn()} />
       </>,
     );
     screen.getByRole("button", { name: "outside" }).focus();
@@ -86,22 +86,22 @@ describe("useModalA11y", () => {
   });
 
   it("dismisses on Escape", () => {
-    const onDismiss = jest.fn();
+    const onDismiss = vi.fn();
     render(<Modal onDismiss={onDismiss} />);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it("does not dismiss on Escape when escapeDismisses is false", () => {
-    const onDismiss = jest.fn();
+    const onDismiss = vi.fn();
     render(<Modal onDismiss={onDismiss} escapeDismisses={false} />);
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
   it("reads the latest onDismiss without re-running on every render", () => {
-    const first = jest.fn();
-    const second = jest.fn();
+    const first = vi.fn();
+    const second = vi.fn();
     const { rerender } = render(<Modal onDismiss={first} />);
 
     // Move focus away, then re-render. A re-running effect would yank focus
@@ -120,7 +120,7 @@ describe("useModalA11y", () => {
     const opener = screen.getByRole("button", { name: "opener" });
     opener.focus();
 
-    const { unmount } = render(<Modal onDismiss={jest.fn()} />);
+    const { unmount } = render(<Modal onDismiss={vi.fn()} />);
     expect(document.activeElement).not.toBe(opener);
     unmount();
     expect(document.activeElement).toBe(opener);
@@ -131,7 +131,7 @@ describe("useModalA11y", () => {
     const opener = screen.getByRole("button", { name: "opener" });
     opener.focus();
 
-    const { unmount } = render(<Modal onDismiss={jest.fn()} />);
+    const { unmount } = render(<Modal onDismiss={vi.fn()} />);
     render(<button type="button">elsewhere</button>);
     const elsewhere = screen.getByRole("button", { name: "elsewhere" });
     elsewhere.focus();
@@ -141,7 +141,7 @@ describe("useModalA11y", () => {
   });
 
   it("stops listening once unmounted", () => {
-    const onDismiss = jest.fn();
+    const onDismiss = vi.fn();
     const { unmount } = render(<Modal onDismiss={onDismiss} />);
     unmount();
     fireEvent.keyDown(document, { key: "Escape" });

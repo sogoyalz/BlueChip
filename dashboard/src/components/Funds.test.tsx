@@ -2,23 +2,24 @@ import React from "react";
 import { render, screen } from "@testing-library/react";
 import axios from "axios";
 import Funds from "./Funds";
+import type { Mock } from "vitest";
 
-jest.mock("axios", () => ({
+vi.mock("axios", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn() },
+  default: { get: vi.fn(), post: vi.fn() },
 }));
 
-jest.mock("react-toastify", () => ({
-  toast: { error: jest.fn(), success: jest.fn() },
+vi.mock("react-toastify", () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-const mockedGet = axios.get as jest.Mock;
+const mockedGet = axios.get as Mock;
 
 const renderFunds = () => render(<Funds />);
 
 describe("Funds", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test("renders the shared account balances from the API", async () => {

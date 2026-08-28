@@ -41,8 +41,8 @@ This is a monorepo with three independent applications:
 
 ```
 BlueChip/
-├── frontend/     # Landing site (React + CRA)           → http://localhost:3000
-├── dashboard/    # Trading dashboard (React + MUI)      → http://localhost:3001
+├── frontend/     # Landing site (React + Vite)          → http://localhost:3000
+├── dashboard/    # Trading dashboard (React + Vite)     → http://localhost:3001
 └── backend/      # REST API + exchange engine (Express) → http://localhost:3002
 ```
 
@@ -128,18 +128,18 @@ GEMINI_API_SECRET=your_sandbox_api_secret
 
 **`frontend/.env`**
 ```env
-PORT=3000
-# Optional — override backend origins for deployed environments:
-# REACT_APP_API_URL=https://your-backend.example.com
-# REACT_APP_DASHBOARD_URL=https://your-dashboard.example.com
+# Optional — override backend origins for deployed environments.
+# The dev-server port lives in vite.config.ts, not here.
+# VITE_API_URL=https://your-backend.example.com
+# VITE_DASHBOARD_URL=https://your-dashboard.example.com
 ```
 
 **`dashboard/.env`**
 ```env
-PORT=3001
-# Optional — override backend/login origins for deployed environments:
-# REACT_APP_API_URL=https://your-backend.example.com
-# REACT_APP_LOGIN_URL=https://your-landing.example.com/login
+# Optional — override backend/login origins for deployed environments.
+# The dev-server port lives in vite.config.ts, not here.
+# VITE_API_URL=https://your-backend.example.com
+# VITE_LOGIN_URL=https://your-landing.example.com/login
 ```
 
 ---
@@ -197,7 +197,7 @@ The repo is deploy-ready but nothing is deployed by default.
 
 1. **MongoDB Atlas** — create a free M0 cluster, get the connection string.
 2. **Backend → Render** (free tier): root directory `backend`, build `npm install && npm run build`, start `npm run serve`. Env: `MONGO_URL`, `TOKEN_KEY`, `CORS_ORIGINS` (both Netlify URLs).
-3. **Frontends → Netlify** (two sites): `frontend/netlify.toml` and `dashboard/netlify.toml` are already in place. Set the `REACT_APP_*` env vars per site (they're baked at build time).
+3. **Frontends → Netlify** (two sites): `frontend/netlify.toml` and `dashboard/netlify.toml` are already in place. Set the `VITE_*` env vars per site (they're baked at build time; the old `REACT_APP_*` names still work).
 4. **Keep-alive**: point a free uptime pinger (UptimeRobot / cron-job.org) at `GET /healthz` every ~10 min — on Render's free tier the server sleeps when idle, which pauses order syncing and snapshots.
 
 ---

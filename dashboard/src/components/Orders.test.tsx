@@ -5,24 +5,25 @@ import { toast } from "react-toastify";
 
 import Orders from "./Orders";
 import { Order } from "../types";
+import type { Mock } from "vitest";
 
 // react-router v7's entrypoint doesn't resolve under CRA's jest config, and
 // Orders only needs useNavigate (for the empty-state action).
-jest.mock("react-router-dom", () => ({
-  useNavigate: () => jest.fn(),
+vi.mock("react-router-dom", () => ({
+  useNavigate: () => vi.fn(),
 }));
 
-jest.mock("axios", () => ({
+vi.mock("axios", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn(), isAxiosError: jest.fn() },
+  default: { get: vi.fn(), post: vi.fn(), isAxiosError: vi.fn() },
 }));
 
-jest.mock("react-toastify", () => ({
-  toast: { error: jest.fn(), success: jest.fn(), info: jest.fn() },
+vi.mock("react-toastify", () => ({
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 
-const mockedGet = axios.get as jest.Mock;
-const mockedPost = axios.post as jest.Mock;
+const mockedGet = axios.get as Mock;
+const mockedPost = axios.post as Mock;
 
 const order = (fields: Partial<Order>): Order => ({
   _id: "o1",
@@ -41,8 +42,8 @@ const renderOrders = (rows: Order[]) => {
 };
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  (axios.isAxiosError as unknown as jest.Mock).mockReturnValue(false);
+  vi.clearAllMocks();
+  (axios.isAxiosError as unknown as Mock).mockReturnValue(false);
 });
 
 describe("Orders partial-fill reporting", () => {

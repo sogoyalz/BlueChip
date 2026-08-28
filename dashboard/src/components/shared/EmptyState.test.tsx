@@ -10,7 +10,7 @@ describe("EmptyState", () => {
   });
 
   test("renders and fires the call-to-action", () => {
-    const onAction = jest.fn();
+    const onAction = vi.fn();
     render(
       <EmptyState
         message="No orders."

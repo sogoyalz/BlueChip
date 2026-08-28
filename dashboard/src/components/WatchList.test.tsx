@@ -7,10 +7,10 @@ import GeneralContext from "./GeneralContext";
 
 // react-router v7's entrypoint doesn't resolve under CRA's jest config, and
 // WatchList only needs useNavigate (for the chart action).
-jest.mock("react-router-dom", () => ({ useNavigate: () => jest.fn() }));
+vi.mock("react-router-dom", () => ({ useNavigate: () => vi.fn() }));
 
 // Chart.js needs a real canvas; the doughnut isn't under test here.
-jest.mock("./DoughnoutChart", () => ({
+vi.mock("./DoughnoutChart", () => ({
   DoughnutChart: () => <div data-testid="doughnut" />,
 }));
 
@@ -27,12 +27,12 @@ const renderWatchList = () =>
   render(
     <GeneralContext.Provider
       value={{
-        openTradeWindow: jest.fn(),
-        closeTradeWindow: jest.fn(),
-        openBuyWindow: jest.fn(),
-        closeBuyWindow: jest.fn(),
+        openTradeWindow: vi.fn(),
+        closeTradeWindow: vi.fn(),
+        openBuyWindow: vi.fn(),
+        closeBuyWindow: vi.fn(),
         orderVersion: 0,
-        notifyOrderPlaced: jest.fn(),
+        notifyOrderPlaced: vi.fn(),
       }}
     >
       <PricesContext.Provider value={{ prices, symbols, isStale: false }}>
