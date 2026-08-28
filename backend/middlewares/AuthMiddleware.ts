@@ -6,6 +6,7 @@ import { HydratedDocument } from "mongoose";
 import { UserModel } from "../model/UserModel";
 import { IUser } from "../schemas/UserSchema";
 import "dotenv/config";
+import { log } from "../util/logger";
 
 declare global {
   namespace Express {
@@ -57,7 +58,7 @@ export const userVerification = (req: Request, res: Response): void => {
       }
       return res.json({ status: false });
     } catch (dbErr) {
-      console.error("[auth] session check failed:", dbErr);
+      log.error("auth.session_check_failed", { err: dbErr as Error });
       return res.status(500).json({ status: false });
     }
   });
@@ -91,7 +92,7 @@ export const verifyToken = (req: Request, res: Response, next: NextFunction): vo
       req.user = user; // make the authenticated user available downstream
       next();
     } catch (dbErr) {
-      console.error("[auth] token verification failed:", dbErr);
+      log.error("auth.token_verify_failed", { err: dbErr as Error });
       return res.status(500).json({ status: false, message: "Auth check failed" });
     }
   });

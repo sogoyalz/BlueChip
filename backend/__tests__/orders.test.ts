@@ -122,6 +122,11 @@ beforeEach(() => {
   mockedGetPrice.mockReturnValue({ price: 50000, changePct24h: 1, updatedAt: Date.now(), source: "rest" });
   mockedOrders.create.mockImplementation(async (doc: object) => fakeOrderDoc(doc));
   mockedPlaceGeminiOrder.mockResolvedValue(geminiFill());
+  // "No order recorded for this key yet" is the right baseline: jest.clearAllMocks
+  // clears call history but NOT implementations, so a mockResolvedValue set by one
+  // test otherwise leaks into every later one — which silently short-circuited the
+  // idempotency check and made unrelated tests pass for the wrong reason.
+  mockedOrders.findOne.mockResolvedValue(null);
 });
 
 describe("POST /api/orders — validation", () => {
@@ -378,6 +383,48 @@ describe("POST /api/orders — idempotency (clientOrderId)", () => {
       qty: 0.1,
     });
     expect(res.status).toBe(500);
+  });
+
+  test("a placement TIMEOUT does not claim the order failed", async () => {
+    // A timeout is not a rejection: the request may have reached Gemini and
+    // been accepted. Telling the user it "could not be placed" asserts
+    // something we do not know, and invites a retry that could double-place.
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), {
+      name: "TimeoutError",
+    });
+    mockedPlaceGeminiOrder.mockRejectedValueOnce(timeout);
+
+    const res = await authedPost().send({
+      symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 0.1, clientOrderId: "k-timeout",
+    });
+
+    expect(res.status).toBe(504); // gateway timeout, not 502
+    expect(res.body.message).toMatch(/may still have been placed/i);
+    // With an idempotency key a retry is safe, and the copy says so.
+    expect(res.body.message).toMatch(/retrying with the same request is safe/i);
+    expect(mockedOrders.create).not.toHaveBeenCalled();
+  });
+
+  test("a timeout WITHOUT an idempotency key warns instead of inviting a retry", async () => {
+    const timeout = Object.assign(new Error("aborted"), { name: "TimeoutError" });
+    mockedPlaceGeminiOrder.mockRejectedValueOnce(timeout);
+
+    const res = await authedPost().send({
+      symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 0.1,
+    });
+
+    expect(res.status).toBe(504);
+    expect(res.body.message).toMatch(/check your orders before trying again/i);
+    expect(res.body.message).not.toMatch(/safe/i);
+  });
+
+  test("a genuine rejection still reports a plain failure", async () => {
+    mockedPlaceGeminiOrder.mockRejectedValueOnce(new Error("400 InvalidPrice"));
+    const res = await authedPost().send({
+      symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 0.1,
+    });
+    expect(res.status).toBe(502);
+    expect(res.body.message).toMatch(/could not be placed/i);
   });
 
   test("a persist failure AFTER the order executed still invalidates balances", async () => {

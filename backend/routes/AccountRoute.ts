@@ -4,6 +4,7 @@
 import { Router } from "express";
 import { verifyToken } from "../middlewares/AuthMiddleware";
 import { getHoldings, getAccountTotals } from "../services/account";
+import { log } from "../util/logger";
 
 const router = Router();
 
@@ -11,7 +12,7 @@ router.get("/api/holdings", verifyToken, async (_req, res) => {
   try {
     res.json(await getHoldings());
   } catch (err) {
-    console.error("[account] holdings failed:", err);
+    log.error("account.holdings_failed", { err: err as Error });
     res.status(500).json({ message: "Failed to fetch holdings" });
   }
 });
@@ -28,7 +29,7 @@ router.get("/api/account", verifyToken, async (req, res) => {
       createdAt: user.createdAt,
     });
   } catch (err) {
-    console.error(`[account] totals failed user=${req.user?._id}:`, err);
+    log.error("account.totals_failed", { userId: String(req.user?._id), err: err as Error });
     res.status(500).json({ message: "Failed to fetch account" });
   }
 });

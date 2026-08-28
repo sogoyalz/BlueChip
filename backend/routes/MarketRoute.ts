@@ -7,6 +7,7 @@ import { getAllPrices } from "../services/priceFeed";
 import { getDepth } from "../services/orderBook";
 import { addClient, removeClient } from "../services/sse";
 import { marketLimiter } from "../middlewares/rateLimit";
+import { log } from "../util/logger";
 import {
   CANDLE_TIMEFRAMES,
   Candle,
@@ -91,7 +92,7 @@ router.get("/api/candles/:symbol", marketLimiter, async (req, res) => {
     candleCache.set(key, { candles, fetchedAt: Date.now() });
     res.json({ symbol, timeframe, candles });
   } catch (err) {
-    console.error(`candles ${key} failed:`, err);
+    log.error("market.candles_failed", { symbol, timeframe, servedStale: Boolean(cached), err: err as Error });
     if (cached) {
       // Serve stale data over an error page.
       res.json({ symbol, timeframe, candles: cached.candles });

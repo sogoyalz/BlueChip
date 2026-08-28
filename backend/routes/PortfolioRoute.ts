@@ -5,6 +5,7 @@ import { Router } from "express";
 import { SnapshotModel } from "../model/SnapshotModel";
 import { verifyToken } from "../middlewares/AuthMiddleware";
 import { fromCents } from "../util/money";
+import { log } from "../util/logger";
 
 const router = Router();
 
@@ -70,7 +71,7 @@ router.get("/api/portfolio/history", verifyToken, async (req, res) => {
 
     res.json({ range, points });
   } catch (err) {
-    console.error(`[portfolio] history failed range=${req.query.range}:`, err);
+    log.error("portfolio.history_failed", { range: String(req.query.range), err: err as Error });
     res.status(500).json({ message: "Failed to fetch portfolio history" });
   }
 });

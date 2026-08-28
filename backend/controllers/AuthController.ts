@@ -5,6 +5,7 @@ import { UserModel } from "../model/UserModel";
 import { BCRYPT_COST } from "../schemas/UserSchema";
 import { createSecretToken } from "../util/SecretToken";
 import { extractToken } from "../middlewares/AuthMiddleware";
+import { log } from "../util/logger";
 
 // Shared cookie options for the auth token. httpOnly so an XSS can't read it,
 // secure in production (HTTPS only). Logout clears the cookie with the SAME
@@ -115,7 +116,7 @@ export const Signup = async (req: Request, res: Response): Promise<void> => {
       user: { id: user._id, email: user.email, username: user.username },
     });
   } catch (error) {
-    console.error("[auth] signup failed:", error);
+    log.error("auth.signup_failed", { err: error as Error });
     res.status(500).json({ message: "Something went wrong. Please try again." });
   }
 };
@@ -161,7 +162,7 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
     // Token lives only in the httpOnly cookie set above, not the body.
     res.status(200).json({ message: "User logged in successfully", success: true });
   } catch (error) {
-    console.error("[auth] login failed:", error);
+    log.error("auth.login_failed", { err: error as Error });
     res.status(500).json({ message: "Something went wrong. Please try again." });
   }
 };
@@ -189,7 +190,7 @@ export const Logout = async (req: Request, res: Response): Promise<void> => {
       }) as JwtPayload;
       await UserModel.updateOne({ _id: payload.id }, { $inc: { tokenVersion: 1 } });
     } catch (err) {
-      console.warn("[logout] could not revoke token:", (err as Error).message);
+      log.warn("auth.revoke_skipped", { reason: (err as Error).message });
     }
   }
   res.clearCookie("token", TOKEN_COOKIE);

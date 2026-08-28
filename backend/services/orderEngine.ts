@@ -11,6 +11,7 @@ import { placeGeminiOrder, cancelGeminiOrder, clearBalancesCache } from "./gemin
 import { snapshotNow } from "./snapshots";
 import { MAX_NOTIONAL, MAX_QTY, roundQty, roundUsd } from "../util/money";
 import { IOrder, OrderSide, OrderType } from "../schemas/OrdersSchema";
+import { log, alert } from "../util/logger";
 
 // A MARKET order is emulated as an immediate-or-cancel limit order priced
 // to cross the book: a BUY bids above the ask, a SELL offers below the bid.
@@ -135,7 +136,37 @@ export async function placeOrder(
       // past our findOne can't double-fill on the exchange.
     });
   } catch (err) {
-    console.error("Gemini order placement failed:", err);
+    // A timeout is NOT a rejection. The request may have reached Gemini and
+    // been accepted; we simply never heard back. Reporting that as "could not
+    // be placed" tells the user something we do not know, and if they retry
+    // without an idempotency key they can place it a second time for real.
+    if ((err as Error).name === "TimeoutError") {
+      alert("orders.place_timeout", {
+        userId: String(userId),
+        symbol,
+        side,
+        qty,
+        clientOrderId,
+        // Whether a retry is safe hinges entirely on this: with a key, Gemini
+        // dedupes and our unique index refuses a second row. Without one,
+        // retrying risks a duplicate order on the exchange.
+        retrySafe: Boolean(clientOrderId),
+        err: err as Error,
+      });
+      throw new OrderError(
+        504,
+        clientOrderId
+          ? "Timed out waiting for the exchange. Your order may still have been placed — retrying with the same request is safe."
+          : "Timed out waiting for the exchange. Your order may still have been placed — check your orders before trying again."
+      );
+    }
+    log.error("orders.place_rejected", {
+      userId: String(userId),
+      symbol,
+      side,
+      qty,
+      err: err as Error,
+    });
     throw new OrderError(502, "Order could not be placed on the exchange");
   }
 
@@ -183,11 +214,17 @@ export async function placeOrder(
     // record it — balances have moved and nothing local knows about it. Log the
     // exchange's own id loudly so it can be reconciled by hand; the caller
     // still gets an error rather than a false success.
-    console.error(
-      `[orderEngine] ORPHANED FILL — order ${geminiResult.order_id} is live on ` +
-        `Gemini for user ${userId} but could not be persisted:`,
-      err
-    );
+    // The one condition nothing else can reconcile: money moved on the
+    // exchange and we have no record of it. This is what monitoring is for.
+    alert("orders.orphaned_fill", {
+      geminiOrderId: geminiResult.order_id,
+      userId: String(userId),
+      symbol,
+      side,
+      qty,
+      executed,
+      err: err as Error,
+    });
     if (executed > 0) {
       // The trade happened regardless of our write failing. Leaving the cached
       // balance in place would serve a figure we already know is wrong to every

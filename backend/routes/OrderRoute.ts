@@ -7,6 +7,7 @@ import { OrderError, placeOrder, cancelOrder } from "../services/orderEngine";
 import { clearBalancesCache } from "../services/geminiPrivate";
 import { snapshotNow } from "../services/snapshots";
 import { applyObservation } from "../services/orderState";
+import { log } from "../util/logger";
 
 const router = Router();
 
@@ -22,10 +23,11 @@ router.post("/api/orders", verifyToken, orderLimiter, async (req, res) => {
       res.status(err.status).json({ message: err.message });
       return;
     }
-    console.error(
-      `[orders] place failed user=${req.user?._id} symbol=${req.body?.symbol}:`,
-      err
-    );
+    log.error("orders.place_failed", {
+      userId: String(req.user?._id),
+      symbol: req.body?.symbol,
+      err: err as Error,
+    });
     res.status(500).json({ message: "Failed to place order" });
   }
 });
@@ -41,7 +43,7 @@ router.get("/api/orders", verifyToken, async (req, res) => {
       .limit(100);
     res.json(orders);
   } catch (err) {
-    console.error(`[orders] list failed user=${req.user?._id}:`, err);
+    log.error("orders.list_failed", { userId: String(req.user?._id), err: err as Error });
     res.status(500).json({ message: "Failed to fetch orders" });
   }
 });
@@ -87,10 +89,11 @@ router.post("/api/orders/:id/cancel", verifyToken, orderLimiter, async (req, res
     // If a fresher observation won, report THAT state, not the one we lost with.
     res.json({ order: updated ?? (await OrdersModel.findById(order._id)) });
   } catch (err) {
-    console.error(
-      `[orders] cancel failed user=${req.user?._id} order=${req.params.id}:`,
-      err
-    );
+    log.error("orders.cancel_failed", {
+      userId: String(req.user?._id),
+      orderId: String(req.params.id),
+      err: err as Error,
+    });
     res.status(500).json({ message: "Failed to cancel order" });
   }
 });
