@@ -282,6 +282,39 @@ describe("POST / (session check)", () => {
   });
 });
 
+describe("malformed balances from the exchange", () => {
+  test("/api/account fails loudly rather than reporting a null portfolio value", async () => {
+    // JSON cannot encode NaN or Infinity — both serialise to null, so a garbage
+    // balance would quietly render as an empty portfolio rather than an error.
+    mockedUserModel.findById.mockResolvedValue(alice);
+    mockedGetBalances.mockResolvedValue([
+      { currency: "USD", amount: "not-a-number", available: "0", availableForWithdrawal: "0" },
+    ]);
+
+    const res = await request(app)
+      .get("/api/account")
+      .set("Authorization", `Bearer ${validToken()}`);
+
+    expect(res.status).toBe(500);
+    expect(res.body).not.toHaveProperty("portfolioValue");
+  });
+
+  test("/api/holdings drops a non-finite quantity instead of emitting null", async () => {
+    mockedUserModel.findById.mockResolvedValue(alice);
+    mockedGetBalances.mockResolvedValue([
+      { currency: "BTC", amount: "1e999", available: "0", availableForWithdrawal: "0" },
+      { currency: "ETH", amount: "2", available: "2", availableForWithdrawal: "2" },
+    ]);
+
+    const res = await request(app)
+      .get("/api/holdings")
+      .set("Authorization", `Bearer ${validToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.map((h: { symbol: string }) => h.symbol)).toEqual(["ETHUSD"]);
+  });
+});
+
 describe("GET /api/holdings", () => {
   test("rejects requests without a token with 401", async () => {
     const res = await request(app).get("/api/holdings");

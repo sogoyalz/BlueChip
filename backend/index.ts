@@ -115,7 +115,14 @@ app.get("/api/holdings", verifyToken, async (_req, res) => {
   try {
     const balances = await getGeminiBalances();
     const holdings = balances
-      .filter((b) => b.currency !== "USD" && Number(b.amount) > 0)
+      // Number.isFinite as well as > 0: a malformed amount can be Infinity,
+      // which passes a bare `> 0` and then serialises to null over JSON.
+      .filter(
+        (b) =>
+          b.currency !== "USD" &&
+          Number.isFinite(Number(b.amount)) &&
+          Number(b.amount) > 0
+      )
       .map((b) => {
         const symbol = `${b.currency}USD`;
         const live = getPrice(symbol);

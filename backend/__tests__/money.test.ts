@@ -51,3 +51,33 @@ describe("constants", () => {
     expect(QTY_EPSILON).toBeLessThan(1e-6);
   });
 });
+
+describe("non-finite money never reaches a total", () => {
+  // Balance amounts arrive from Gemini as strings and go through Number().
+  // "abc" becomes NaN and "1e999" becomes Infinity, and either one poisons the
+  // sum it lands in. Verified against a real database: mongoose REJECTS a NaN
+  // valueCents (so the snapshot is silently dropped and portfolio history just
+  // stops growing), while Infinity is ACCEPTED and stored — and the history
+  // route's `typeof valueCents === "number"` guard does not catch it, because
+  // typeof Infinity is "number". One bad response permanently poisons the chart.
+  test("toCents refuses NaN", () => {
+    expect(() => toCents(NaN)).toThrow(/non-finite/i);
+  });
+
+  test("toCents refuses Infinity in both directions", () => {
+    expect(() => toCents(Infinity)).toThrow(/non-finite/i);
+    expect(() => toCents(-Infinity)).toThrow(/non-finite/i);
+  });
+
+  test("finite values are unaffected", () => {
+    expect(toCents(10.005)).toBe(1001);
+    expect(toCents(0)).toBe(0);
+    expect(toCents(-3.5)).toBe(-350);
+  });
+
+  test("a bad string amount is caught where it is parsed", () => {
+    expect(() => toCents(Number("abc") * 78000)).toThrow(/non-finite/i);
+    expect(() => toCents(Number("1e999") * 78000)).toThrow(/non-finite/i);
+  });
+});
+

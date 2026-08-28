@@ -26,6 +26,17 @@ export function roundQty(n: number): number {
 // the edge. (Order *prices* — limitPrice/fillPrice — stay decimal: they mirror
 // Gemini's own decimal price model and are the exchange's to be the ledger of.)
 export function toCents(usd: number): number {
+  // Amounts and prices arrive from the exchange as strings and reach here via
+  // Number(). "abc" becomes NaN, "1e999" becomes Infinity, and either one
+  // poisons whatever total it lands in. Checked against a real database:
+  // mongoose rejects a NaN valueCents (so the snapshot is dropped silently and
+  // portfolio history simply stops growing) while Infinity is ACCEPTED and
+  // persisted — and `typeof Infinity === "number"`, so a guard written to skip
+  // bad points lets it through to the chart, permanently. Refuse it here, at
+  // the one place every stored total passes through.
+  if (!Number.isFinite(usd)) {
+    throw new RangeError(`toCents received a non-finite value: ${usd}`);
+  }
   return Math.round(usd * 100);
 }
 

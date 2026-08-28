@@ -35,10 +35,12 @@ router.get("/api/portfolio/history", verifyToken, async (req, res) => {
     const step = Math.ceil(snapshots.length / MAX_POINTS);
     const points = snapshots
       .filter((_, i) => i % step === 0 || i === snapshots.length - 1)
-      // Convert stored integer cents back to dollars at the API edge. Pre-cents
-      // snapshots lack valueCents; skip them rather than emit NaN — they age out
-      // as new cents-based snapshots accumulate.
-      .filter((s) => typeof s.valueCents === "number")
+      // Convert stored integer cents back to dollars at the API edge. Skip
+      // anything that is not a finite number: pre-cents snapshots have no
+      // valueCents at all, and a historical row can hold Infinity, which
+      // `typeof === "number"` happily accepts and which turns into NaN path
+      // coordinates in the chart.
+      .filter((s) => Number.isFinite(s.valueCents))
       .map((s) => ({ ts: s.ts.getTime(), value: fromCents(s.valueCents) }));
 
     res.json({ range, points });

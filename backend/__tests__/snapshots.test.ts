@@ -60,6 +60,36 @@ describe("snapshotNow", () => {
     await expect(snapshotNow()).resolves.toBeUndefined();
     expect(mockedSnapshots.create).not.toHaveBeenCalled();
   });
+
+  test("writes NO snapshot when a balance amount is not a finite number", async () => {
+    // Amounts arrive as strings. A malformed one becomes NaN or Infinity and
+    // poisons the whole total. Recording a wrong portfolio value is worse than
+    // recording none — and an Infinity actually persists (verified against a
+    // real database), permanently corrupting the history series.
+    mockedGetBalances.mockResolvedValue([
+      { currency: "USD", amount: "40000", available: "40000", availableForWithdrawal: "40000" },
+      { currency: "BTC", amount: "not-a-number", available: "0", availableForWithdrawal: "0" },
+    ]);
+    await expect(snapshotNow()).resolves.toBeUndefined();
+    expect(mockedSnapshots.create).not.toHaveBeenCalled();
+  });
+
+  test("writes NO snapshot when an amount overflows to Infinity", async () => {
+    mockedGetBalances.mockResolvedValue([
+      { currency: "USD", amount: "1e999", available: "0", availableForWithdrawal: "0" },
+    ]);
+    await expect(snapshotNow()).resolves.toBeUndefined();
+    expect(mockedSnapshots.create).not.toHaveBeenCalled();
+  });
+
+  test("writes NO snapshot when a live price is non-finite", async () => {
+    mockedGetPrice.mockReturnValue({ price: Infinity });
+    mockedGetBalances.mockResolvedValue([
+      { currency: "BTC", amount: "1", available: "1", availableForWithdrawal: "1" },
+    ]);
+    await expect(snapshotNow()).resolves.toBeUndefined();
+    expect(mockedSnapshots.create).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/portfolio/history", () => {
@@ -95,6 +125,26 @@ describe("GET /api/portfolio/history", () => {
     const [filter] = mockedSnapshots.find.mock.calls[0];
     expect(filter.userId).toBeUndefined();
     expect(filter.ts.$gte).toBeInstanceOf(Date);
+  });
+
+  test("excludes stored points that are not finite", async () => {
+    // typeof Infinity === "number", so the original guard let a poisoned row
+    // straight through to the chart, where it produces NaN path coordinates.
+    mockedUser.findById.mockResolvedValue({ _id: "u1", username: "a" });
+    mockedSnapshots.find.mockReturnValue({
+      sort: jest.fn().mockResolvedValue([
+        { valueCents: 100000, ts: new Date("2026-01-01") },
+        { valueCents: Infinity, ts: new Date("2026-01-02") },
+        { valueCents: 120000, ts: new Date("2026-01-03") },
+      ]),
+    });
+
+    const res = await request(app)
+      .get("/api/portfolio/history?range=ALL")
+      .set("Authorization", `Bearer ${token("u1")}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.points.map((p: { value: number }) => p.value)).toEqual([1000, 1200]);
   });
 
   test("downsamples long histories to at most ~200 points, keeping the newest", async () => {
