@@ -13,7 +13,7 @@ jest.mock("../model/OrdersModel", () => ({
   OrdersModel: { find: jest.fn() },
 }));
 jest.mock("../model/SnapshotModel", () => ({
-  SnapshotModel: { find: jest.fn(), create: jest.fn() },
+  SnapshotModel: { find: jest.fn(), create: jest.fn(), aggregate: jest.fn() },
 }));
 jest.mock("../services/priceFeed", () => ({
   getPrice: jest.fn(),
@@ -38,16 +38,12 @@ const mockedGetBalances = getGeminiBalances as jest.Mock;
 const token = (id: string) => jwt.sign({ id }, process.env.TOKEN_KEY as string);
 
 /**
- * Mirrors the real query chain: find().sort({ts:-1}).limit(n). Documents are
- * handed back newest-first, the way the database returns them, so the route's
- * own reverse() is exercised rather than bypassed.
+ * The history route downsamples in the database via $bucketAuto, so the mock
+ * stands in for the aggregation result: one row per bucket, already in
+ * chronological order, carrying the last value in each bucket.
  */
-const historyReturns = (ascendingDocs: object[]) =>
-  mockedSnapshots.find.mockReturnValue({
-    sort: jest.fn().mockReturnValue({
-      limit: jest.fn().mockResolvedValue([...ascendingDocs].reverse()),
-    }),
-  });
+const historyReturns = (buckets: object[]) =>
+  mockedSnapshots.aggregate.mockResolvedValue(buckets);
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -134,27 +130,71 @@ describe("GET /api/portfolio/history", () => {
     expect(res.status).toBe(200);
     expect(res.body.points).toHaveLength(2);
     expect(res.body.points[1].value).toBe(105000);
-    const [filter] = mockedSnapshots.find.mock.calls[0];
-    expect(filter.userId).toBeUndefined();
-    expect(filter.ts.$gte).toBeInstanceOf(Date);
+    // The history is account-wide, not per user — nothing scopes it by userId.
+    const pipeline = mockedSnapshots.aggregate.mock.calls[0][0];
+    expect(JSON.stringify(pipeline)).not.toContain("userId");
   });
 
-  test("never loads the whole collection to draw 200 points", async () => {
-    // Snapshots are written every 15 minutes plus once per fill: ~2,900 after a
-    // month, ~35,000 after a year. Reading all of them into memory and sorting
-    // them in JavaScript to emit 200 points degrades continuously and silently.
-    // The query must be bounded no matter how much history exists.
+  test("asks the database to downsample rather than reading the collection", async () => {
+    // Snapshots accumulate every 15 minutes plus one per fill: ~2,900 after a
+    // month, ~35,000 after a year. Reading them all to emit 200 points grew
+    // without bound. The reduction has to happen database-side, and the point
+    // count must not depend on how much history exists.
     mockedUser.findById.mockResolvedValue({ _id: "u1", username: "a" });
-    const limit = jest.fn().mockResolvedValue([]);
-    const sort = jest.fn().mockReturnValue({ limit });
-    mockedSnapshots.find.mockReturnValue({ sort });
+    historyReturns([]);
 
     await request(app)
       .get("/api/portfolio/history?range=ALL")
       .set("Authorization", `Bearer ${token("u1")}`);
 
-    expect(limit).toHaveBeenCalled();
-    expect(limit.mock.calls[0][0]).toBeLessThanOrEqual(5000);
+    expect(mockedSnapshots.aggregate).toHaveBeenCalled();
+    expect(mockedSnapshots.find).not.toHaveBeenCalled();
+    const pipeline = mockedSnapshots.aggregate.mock.calls[0][0];
+    const bucket = pipeline.find((st: Record<string, unknown>) => "$bucketAuto" in st);
+    expect(bucket.$bucketAuto.buckets).toBe(200);
+    // $last, so the final bucket carries the newest snapshot rather than an
+    // older one from inside the same span.
+    expect(bucket.$bucketAuto.output.ts).toEqual({ $last: "$ts" });
+  });
+
+  test("a ranged request filters before bucketing, ALL does not", async () => {
+    mockedUser.findById.mockResolvedValue({ _id: "u1", username: "a" });
+
+    historyReturns([]);
+    await request(app)
+      .get("/api/portfolio/history?range=1W")
+      .set("Authorization", `Bearer ${token("u1")}`);
+    const ranged = mockedSnapshots.aggregate.mock.calls[0][0];
+    expect(ranged[0].$match.ts.$gte).toBeInstanceOf(Date);
+
+    mockedSnapshots.aggregate.mockClear();
+    historyReturns([]);
+    await request(app)
+      .get("/api/portfolio/history?range=ALL")
+      .set("Authorization", `Bearer ${token("u1")}`);
+    const all = mockedSnapshots.aggregate.mock.calls[0][0];
+    expect(all.some((st: Record<string, unknown>) => "$match" in st)).toBe(false);
+  });
+
+  test("an empty history returns no points rather than failing", async () => {
+    mockedUser.findById.mockResolvedValue({ _id: "u1", username: "a" });
+    historyReturns([]);
+    const res = await request(app)
+      .get("/api/portfolio/history?range=ALL")
+      .set("Authorization", `Bearer ${token("u1")}`);
+    expect(res.status).toBe(200);
+    expect(res.body.points).toEqual([]);
+  });
+
+  test("a single snapshot survives downsampling", async () => {
+    mockedUser.findById.mockResolvedValue({ _id: "u1", username: "a" });
+    historyReturns([{ valueCents: 123456, ts: new Date("2026-02-01") }]);
+    const res = await request(app)
+      .get("/api/portfolio/history?range=ALL")
+      .set("Authorization", `Bearer ${token("u1")}`);
+    expect(res.body.points).toEqual([
+      { ts: new Date("2026-02-01").getTime(), value: 1234.56 },
+    ]);
   });
 
   test("excludes stored points that are not finite", async () => {
@@ -175,17 +215,22 @@ describe("GET /api/portfolio/history", () => {
     expect(res.body.points.map((p: { value: number }) => p.value)).toEqual([1000, 1200]);
   });
 
-  test("downsamples long histories to at most ~200 points, keeping the newest", async () => {
-    // valueCents = i*100 → dollars = i, so the newest point is $999.
-    const snaps = Array.from({ length: 1000 }, (_, i) => ({
+  test("passes the database's buckets straight through, newest last", async () => {
+    // The reduction itself is MongoDB's job now, so a mocked model cannot
+    // demonstrate it — that is asserted against a real database in
+    // persistence.integration.test.ts. What this covers is that the route does
+    // not reorder or drop what it is handed.
+    const buckets = Array.from({ length: 200 }, (_, i) => ({
       valueCents: i * 100,
       ts: new Date(1700000000000 + i * 60000),
     }));
-    historyReturns(snaps);
+    historyReturns(buckets);
     const res = await request(app)
       .get("/api/portfolio/history?range=ALL")
       .set("Authorization", `Bearer ${token("u1")}`);
-    expect(res.body.points.length).toBeLessThanOrEqual(201);
-    expect(res.body.points[res.body.points.length - 1].value).toBe(999);
+    expect(res.body.points).toHaveLength(200);
+    expect(res.body.points[res.body.points.length - 1].value).toBe(199);
+    const ts = res.body.points.map((p: { ts: number }) => p.ts);
+    expect(ts).toEqual([...ts].sort((a, b) => a - b));
   });
 });
