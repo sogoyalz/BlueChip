@@ -16,6 +16,12 @@
   --accent: #e50914; /* primary accent */
   --accent-hover: #ff1f2e;
   --accent-soft: rgba(229, 9, 20, 0.1);
+  /* The accent as TEXT on --accent-soft. Brand red at #e50914 measures only
+     3.4–4.0:1 there, under the 4.5:1 AA needs; this is the same hue lifted
+     until it clears, measuring 4.9–5.4:1 on the grounds that actually occur.
+     Kept distinct from --loss so the buy and sell tabs, which sit next to
+     each other, do not read as the same colour. */
+  --accent-ink: #ff3742;
 
   /* green/red are reserved for gains & losses only */
   --gain: #00c853;
@@ -362,12 +368,12 @@ input:focus-visible {
 }
 
 .menu:hover {
-  color: var(--accent);
+  color: var(--accent-ink);
   background: var(--accent-soft);
 }
 
 .menu.selected {
-  color: var(--accent);
+  color: var(--accent-ink);
   background: var(--accent-soft);
 }
 
@@ -415,7 +421,7 @@ input:focus-visible {
   border-radius: 50%;
   font-size: 0.68rem;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-ink);
   background: var(--accent-soft);
 }
 
@@ -448,7 +454,7 @@ input:focus-visible {
 
 .profile-dropdown .logout-btn:hover {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 /* ============================================================
@@ -857,7 +863,7 @@ input:focus-visible {
 }
 
 .mode-chip.buy {
-  color: var(--accent);
+  color: var(--accent-ink);
   background: var(--accent-soft);
 }
 
@@ -1281,7 +1287,7 @@ input:focus-visible {
 }
 
 .range-tab.selected {
-  color: var(--accent);
+  color: var(--accent-ink);
   background: var(--accent-soft);
 }
 

@@ -104,6 +104,7 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
                 type="number"
                 name="qty"
                 id="qty"
+                aria-label={`Quantity in ${base}`}
                 step="any"
                 min="0"
                 placeholder="0.00"
@@ -118,6 +119,7 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
                   type="number"
                   name="price"
                   id="price"
+                  aria-label="Limit price in USD"
                   step="any"
                   min="0"
                   onChange={(e) => setLimitPrice(e.target.value)}
@@ -131,6 +133,9 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
                   type="text"
                   readOnly
                   tabIndex={-1}
+                  // A <legend> names the fieldset, not the control inside it,
+                  // so this field had no accessible name at all.
+                  aria-label="Market price"
                   value={livePrice ? usd(livePrice) : "…"}
                 />
               </fieldset>

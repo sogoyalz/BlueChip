@@ -26,7 +26,10 @@ const Dashboard = () => {
         <aside aria-label="Watchlist">
           <WatchList />
         </aside>
-        <main className="content">
+        {/* tabIndex=0 because .content is the page's scroll container: a
+            scrollable region that nothing can focus cannot be scrolled by
+            keyboard alone. */}
+        <main className="content" tabIndex={0}>
           <Suspense fallback={<Skeleton label="Loading…" />}>
             <Routes>
               <Route path="/" element={<Summary />} />
