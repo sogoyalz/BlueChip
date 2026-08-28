@@ -1,0 +1,5 @@
+node_modules/
+# Built copies of the two React apps, compiled with this suite's own origins.
+.builds/
+test-results/
+playwright-report/
