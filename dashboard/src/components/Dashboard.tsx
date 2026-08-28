@@ -21,8 +21,12 @@ const Dashboard = () => {
     // watchlist) so any page — charts, holdings — can open the trade modal.
     <GeneralContextProvider>
       <div className="dashboard-container">
-        <WatchList />
-        <div className="content">
+        {/* Landmarks: without these the whole dashboard is anonymous <div>s and
+            a screen reader can only read it linearly from the top. */}
+        <aside aria-label="Watchlist">
+          <WatchList />
+        </aside>
+        <main className="content">
           <Suspense fallback={<Skeleton label="Loading…" />}>
             <Routes>
               <Route path="/" element={<Summary />} />
@@ -32,7 +36,7 @@ const Dashboard = () => {
               <Route path="/market/:symbol" element={<MarketDetail />} />
             </Routes>
           </Suspense>
-        </div>
+        </main>
       </div>
     </GeneralContextProvider>
   );

@@ -10,7 +10,8 @@
 
   --ink: #f0f0f2; /* primary text */
   --ink-2: #a0a0a8; /* secondary text */
-  --ink-3: #6c6c74; /* muted labels */
+  --ink-3: #8b93a1; /* muted labels — was #6c6c74, measured 3.80:1 against
+                       the page ground, below the 4.5:1 WCAG AA floor */
 
   --accent: #e50914; /* primary accent */
   --accent-hover: #ff1f2e;
@@ -86,7 +87,7 @@ input:focus-visible {
 .index-points,
 .percent,
 .price,
-.col h5,
+.col h2,
 .table .data p:last-child {
   font-variant-numeric: tabular-nums;
 }
@@ -96,7 +97,7 @@ input:focus-visible {
 .index-points,
 .percent,
 .price,
-.col h5,
+.col h2,
 .chart-value,
 .col-delta .pnl,
 .chart-delta .pnl,
@@ -321,6 +322,14 @@ input:focus-visible {
   min-width: 0;
 }
 
+/* The nav landmark sits between .menus and its list, so it has to carry the
+   same shrink behaviour the list used to get as a direct flex child —
+   otherwise it refuses to shrink and the list's overflow-x never engages. */
+.menus > nav {
+  display: flex;
+  min-width: 0;
+}
+
 .menus ul {
   list-style-type: none;
   display: flex;
@@ -460,6 +469,42 @@ input:focus-visible {
 /* ============================================================
    Watchlist
    ============================================================ */
+/* Visible to screen readers, not on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Touch targets. WCAG 2.5.5 and both platform HIGs ask for ~44px; the nav
+   links measured 22px and the chart range tabs 29px. Grown with padding so the
+   type scale is untouched. */
+@media (pointer: coarse) {
+  .menu,
+  .range-tab,
+  .mode-tab {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+/* The nav/aside landmarks were added for screen readers and must not disturb
+   the layout that already existed. `display: contents` removes the wrapper
+   from the box tree entirely, so .watchlist-container stays a direct flex child
+   of .dashboard-container and every existing rule — including the `order: 2`
+   that puts the watchlist below the content on narrow screens — keeps working.
+   Supported in every browser that supports the grid/flex this layout uses. */
+.dashboard-container > aside {
+  display: contents;
+}
+
 .watchlist-container {
   flex-basis: 32%;
   min-width: 300px;
@@ -590,25 +635,45 @@ input:focus-visible {
 }
 
 /* hover actions */
+/* The actions are always in the DOM so they work by touch and by keyboard.
+   Where a fine pointer exists they behave exactly as before — an overlay
+   revealed on hover. Where it doesn't, they sit inline beneath the row, since
+   there is no hover to reveal them with. */
 .actions {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding-right: 12px;
-  background: linear-gradient(
-    90deg,
-    rgba(246, 247, 249, 0) 0%,
-    var(--surface-hover) 30%
-  );
+  padding: 8px 12px 2px;
 }
 
-.list li:hover > .actions {
-  display: flex;
+@media (hover: hover) and (pointer: fine) {
+  .actions {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0 12px 0 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    background: linear-gradient(
+      90deg,
+      rgba(246, 247, 249, 0) 0%,
+      var(--surface-hover) 30%
+    );
+  }
+
+  /* focus-within so the keyboard reveals them too, not just the mouse. */
+  .list li:hover > .actions,
+  .list li:focus-within > .actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actions { transition: none; }
 }
 
 .actions span {
@@ -971,7 +1036,7 @@ input:focus-visible {
   color: var(--ink-3);
 }
 
-.col h5 {
+.col h2 {
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -979,7 +1044,7 @@ input:focus-visible {
   margin-top: 10px;
 }
 
-.col h5 span {
+.col h2 span {
   font-size: 1.15rem;
 }
 

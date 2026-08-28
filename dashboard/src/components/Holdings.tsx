@@ -109,9 +109,10 @@ const Holdings = () => {
 
   return (
     <>
-      <h3 className="title">Holdings{loaded ? ` (${holdings.length})` : ""}</h3>
+      <h1 className="title">Holdings{loaded ? ` (${holdings.length})` : ""}</h1>
 
       <DataTable
+        label="Your holdings"
         columns={columns}
         rows={holdings}
         rowKey={(h) => h.symbol}

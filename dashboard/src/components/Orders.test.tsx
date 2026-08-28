@@ -43,6 +43,8 @@ const renderOrders = (rows: Order[]) => {
 beforeEach(() => {
   jest.clearAllMocks();
   (axios.isAxiosError as unknown as jest.Mock).mockReturnValue(false);
+  // Cancelling asks for confirmation; assume "yes" unless a test says otherwise.
+  window.confirm = jest.fn(() => true);
 });
 
 describe("Orders partial-fill reporting", () => {
@@ -83,6 +85,27 @@ describe("Orders partial-fill reporting", () => {
     ]);
     expect(await screen.findByText("0.2 / 1")).toBeInTheDocument();
     expect(screen.getByText("49,000.00 (limit)")).toBeInTheDocument();
+  });
+});
+
+describe("Orders cancel confirmation", () => {
+  test("declining the confirmation cancels nothing", async () => {
+    // Cancelling is irreversible and sits one click from every resting row, so
+    // it must not be possible to trigger it by a stray click.
+    window.confirm = jest.fn(() => false);
+    renderOrders([order({ status: "OPEN", qty: 1, limitPrice: 49000 })]);
+    fireEvent.click(await screen.findByRole("button", { name: /cancel/i }));
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(mockedPost).not.toHaveBeenCalled();
+  });
+
+  test("the prompt names the order being cancelled", async () => {
+    renderOrders([order({ status: "OPEN", side: "BUY", qty: 1, symbol: "BTCUSD", limitPrice: 49000 })]);
+    fireEvent.click(await screen.findByRole("button", { name: /cancel/i }));
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("BTCUSD"));
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("buy"));
   });
 });
 

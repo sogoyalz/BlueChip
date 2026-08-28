@@ -139,9 +139,9 @@ const Summary = () => {
     <>
       <div className="dash-header">
         <div>
-          <h2 className="dash-title">
+          <h1 className="dash-title">
             Hi, {account?.username ?? "trader"}!
-          </h2>
+          </h1>
           <p className="dash-date">{dateStr} · Crypto markets never close</p>
         </div>
       </div>

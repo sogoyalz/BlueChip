@@ -54,6 +54,15 @@ const Orders = () => {
   }, [fetchOrders]);
 
   const handleCancel = async (order: Order) => {
+    // Cancelling is irreversible and sits one click from every resting row.
+    const limit = typeof order.limitPrice === "number" ? ` at ${fmt(order.limitPrice)}` : "";
+    if (
+      !window.confirm(
+        `Cancel this ${order.side.toLowerCase()} order — ${order.qty} ${order.symbol}${limit}?`
+      )
+    ) {
+      return;
+    }
     try {
       const { data } = await axios.post<{ order: Order }>(
         `${API_URL}/api/orders/${order._id}/cancel`,
@@ -157,11 +166,12 @@ const Orders = () => {
 
   return (
     <>
-      <h3 className="title">
+      <h1 className="title">
         Orders ({allOrders.length}){openCount > 0 && ` · ${openCount} open`}
-      </h3>
+      </h1>
 
       <DataTable
+        label="Your orders"
         columns={columns}
         rows={allOrders}
         rowKey={(o) => o._id}

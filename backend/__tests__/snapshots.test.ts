@@ -37,6 +37,18 @@ const mockedGetBalances = getGeminiBalances as jest.Mock;
 
 const token = (id: string) => jwt.sign({ id }, process.env.TOKEN_KEY as string);
 
+/**
+ * Mirrors the real query chain: find().sort({ts:-1}).limit(n). Documents are
+ * handed back newest-first, the way the database returns them, so the route's
+ * own reverse() is exercised rather than bypassed.
+ */
+const historyReturns = (ascendingDocs: object[]) =>
+  mockedSnapshots.find.mockReturnValue({
+    sort: jest.fn().mockReturnValue({
+      limit: jest.fn().mockResolvedValue([...ascendingDocs].reverse()),
+    }),
+  });
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockedGetPrice.mockReturnValue({ price: 50000 });
@@ -115,7 +127,7 @@ describe("GET /api/portfolio/history", () => {
       { valueCents: 10000000, ts: new Date("2026-07-01") },
       { valueCents: 10500000, ts: new Date("2026-07-05") },
     ];
-    mockedSnapshots.find.mockReturnValue({ sort: jest.fn().mockResolvedValue(snaps) });
+    historyReturns(snaps);
     const res = await request(app)
       .get("/api/portfolio/history?range=1W")
       .set("Authorization", `Bearer ${token("u1")}`);
@@ -127,17 +139,33 @@ describe("GET /api/portfolio/history", () => {
     expect(filter.ts.$gte).toBeInstanceOf(Date);
   });
 
+  test("never loads the whole collection to draw 200 points", async () => {
+    // Snapshots are written every 15 minutes plus once per fill: ~2,900 after a
+    // month, ~35,000 after a year. Reading all of them into memory and sorting
+    // them in JavaScript to emit 200 points degrades continuously and silently.
+    // The query must be bounded no matter how much history exists.
+    mockedUser.findById.mockResolvedValue({ _id: "u1", username: "a" });
+    const limit = jest.fn().mockResolvedValue([]);
+    const sort = jest.fn().mockReturnValue({ limit });
+    mockedSnapshots.find.mockReturnValue({ sort });
+
+    await request(app)
+      .get("/api/portfolio/history?range=ALL")
+      .set("Authorization", `Bearer ${token("u1")}`);
+
+    expect(limit).toHaveBeenCalled();
+    expect(limit.mock.calls[0][0]).toBeLessThanOrEqual(5000);
+  });
+
   test("excludes stored points that are not finite", async () => {
     // typeof Infinity === "number", so the original guard let a poisoned row
     // straight through to the chart, where it produces NaN path coordinates.
     mockedUser.findById.mockResolvedValue({ _id: "u1", username: "a" });
-    mockedSnapshots.find.mockReturnValue({
-      sort: jest.fn().mockResolvedValue([
-        { valueCents: 100000, ts: new Date("2026-01-01") },
-        { valueCents: Infinity, ts: new Date("2026-01-02") },
-        { valueCents: 120000, ts: new Date("2026-01-03") },
-      ]),
-    });
+    historyReturns([
+      { valueCents: 100000, ts: new Date("2026-01-01") },
+      { valueCents: Infinity, ts: new Date("2026-01-02") },
+      { valueCents: 120000, ts: new Date("2026-01-03") },
+    ]);
 
     const res = await request(app)
       .get("/api/portfolio/history?range=ALL")
@@ -153,7 +181,7 @@ describe("GET /api/portfolio/history", () => {
       valueCents: i * 100,
       ts: new Date(1700000000000 + i * 60000),
     }));
-    mockedSnapshots.find.mockReturnValue({ sort: jest.fn().mockResolvedValue(snaps) });
+    historyReturns(snaps);
     const res = await request(app)
       .get("/api/portfolio/history?range=ALL")
       .set("Authorization", `Bearer ${token("u1")}`);

@@ -59,6 +59,7 @@ const Menu = () => {
     <div className="menu-container">
       <img src="/logo.svg" style={{ width: "50px" }} alt="BlueChip" />
       <div className="menus">
+        <nav aria-label="Main">
         <ul>
           {menuItems.map((item) => (
             <li key={item.to}>
@@ -74,6 +75,7 @@ const Menu = () => {
             </li>
           ))}
         </ul>
+        </nav>
         <hr />
         <button
           type="button"

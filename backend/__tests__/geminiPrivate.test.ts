@@ -142,3 +142,19 @@ describe("balances cache invalidation", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2); // went back to Gemini, not the cache
   });
 });
+
+describe("request timeouts", () => {
+  test("every signed request carries an abort signal", async () => {
+    // fetch() has no default timeout. Without one, a hung connection holds the
+    // handler open forever — and for an order placement the caller cannot tell
+    // whether it reached the exchange.
+    const mockFetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await getGeminiBalances();
+
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+  });
+});

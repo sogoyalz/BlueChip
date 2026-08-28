@@ -104,16 +104,11 @@ const WatchListItem = ({
   info: SymbolInfo;
   tick?: TickerPrice;
 }) => {
-  const [showWatchlistActions, setShowWatchlistActions] = useState(false);
-
   const isDown = (tick?.changePct24h ?? 0) < 0;
   const pct = tick ? `${tick.changePct24h >= 0 ? "+" : ""}${tick.changePct24h.toFixed(2)}%` : "—";
 
   return (
-    <li
-      onMouseEnter={() => setShowWatchlistActions(true)}
-      onMouseLeave={() => setShowWatchlistActions(false)}
-    >
+    <li>
       <div className="item">
         <div className="item-symbol">
           <div className="symbol-badge">{info.base.slice(0, 3)}</div>
@@ -129,12 +124,16 @@ const WatchListItem = ({
           <span className="price">{tick ? fmtPrice(tick.price) : "…"}</span>
         </div>
       </div>
-      {showWatchlistActions && <WatchListActions symbol={info.symbol} />}
+      {/* Always rendered. Mounting these on mouseenter meant they never
+          existed on a touch device (a tap fires no mouseenter) and could never
+          be tabbed to. The hover reveal is now purely a fine-pointer refinement
+          in CSS. */}
+      <WatchListActions symbol={info.symbol} base={info.base} />
     </li>
   );
 };
 
-const WatchListActions = ({ symbol }: { symbol: string }) => {
+const WatchListActions = ({ symbol, base }: { symbol: string; base: string }) => {
   const generalContext = useContext(GeneralContext);
   const navigate = useNavigate();
 
@@ -142,7 +141,7 @@ const WatchListActions = ({ symbol }: { symbol: string }) => {
     <span className="actions">
       <span>
         <Tooltip
-          title="Buy"
+          title={`Buy ${base}`}
           placement="top"
           arrow
           slots={{ transition: Grow }}
@@ -173,7 +172,11 @@ const WatchListActions = ({ symbol }: { symbol: string }) => {
           arrow
           slots={{ transition: Grow }}
         >
-          <button className="action" onClick={() => navigate(`/market/${symbol}`)}>
+          <button
+            className="action"
+            aria-label={`${base} chart`}
+            onClick={() => navigate(`/market/${symbol}`)}
+          >
             <BarChartOutlined className="icon" />
           </button>
         </Tooltip>

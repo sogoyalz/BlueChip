@@ -7,6 +7,11 @@
 
 const GEMINI_BASE = process.env.GEMINI_API_URL || "https://api.gemini.com";
 
+// fetch() has no default timeout: a hung upstream connection would hold a
+// request handler open indefinitely, and with enough of them the process stops
+// serving anything. Every call to Gemini is bounded.
+const REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 8_000;
+
 export const CANDLE_TIMEFRAMES = [
   "1m",
   "5m",
@@ -33,6 +38,7 @@ export type Candle = [number, number, number, number, number, number];
 async function geminiGet<T>(path: string): Promise<T> {
   const res = await fetch(`${GEMINI_BASE}${path}`, {
     headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Gemini ${path} responded ${res.status}`);

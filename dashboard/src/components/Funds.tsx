@@ -34,7 +34,7 @@ const Funds = () => {
 
   return (
     <>
-      <h3 className="title">Funds</h3>
+      <h1 className="title">Funds</h1>
 
       <div className="row cols-4">
         <StatCard label="Cash balance" sub="available to trade">

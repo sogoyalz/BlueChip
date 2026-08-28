@@ -19,6 +19,11 @@ if (!PRIVATE_BASE.includes("sandbox")) {
   );
 }
 
+// Same bound as the public client. An order placement that never returns is
+// worse than one that fails: the caller cannot tell whether it reached the
+// exchange, and nothing else will reconcile it.
+const REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 8_000;
+
 const API_KEY = process.env.GEMINI_API_KEY;
 const API_SECRET = process.env.GEMINI_API_SECRET;
 
@@ -84,6 +89,7 @@ async function geminiPrivatePost<T>(
       "X-GEMINI-SIGNATURE": signature,
       Accept: "application/json",
     },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
     throw new Error(`Gemini ${path} responded ${res.status}`);

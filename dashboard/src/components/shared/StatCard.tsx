@@ -14,7 +14,7 @@ interface StatCardProps {
 const StatCard = ({ label, children, delta, sub }: StatCardProps) => (
   <div className="col">
     <p className="col-label">{label}</p>
-    <h5>{children}</h5>
+    <h2>{children}</h2>
     {(delta || sub) && (
       <div className="col-delta">
         {delta}
