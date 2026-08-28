@@ -27,6 +27,7 @@ import { isWsConnected } from "./services/geminiWs";
 import { SYMBOLS } from "./config/symbols";
 import { isFresh } from "./services/priceFeed";
 import { fetchSymbols } from "./services/gemini";
+import { log } from "./util/logger";
 import { validateSymbolsAgainstGemini } from "./config/symbols";
 
 // Last-resort safety nets. Several paths are fire-and-forget (void
@@ -134,6 +135,17 @@ const start = async (): Promise<void> => {
     // without a sufficiently long one rather than silently signing with it.
     if (!process.env.TOKEN_KEY || process.env.TOKEN_KEY.length < 32) {
       throw new Error("TOKEN_KEY is not set or is too short (need >= 32 chars)");
+    }
+    // Not fatal — the app runs correctly without it — but the orphaned-fill
+    // alert is the one signal that cannot be reconstructed after the fact, and
+    // on a host where nobody tails stdout it currently reaches no one. Say so
+    // once at boot rather than letting the silence pass for health.
+    if (process.env.NODE_ENV === "production" && !process.env.MONITORING_WEBHOOK_URL) {
+      log.warn("boot.no_alert_destination", {
+        detail:
+          "MONITORING_WEBHOOK_URL is unset — alerts stay on stdout only, so an " +
+          "orphaned fill will not reach anyone.",
+      });
     }
     await mongoose.connect(uri);
     console.log("db connected");

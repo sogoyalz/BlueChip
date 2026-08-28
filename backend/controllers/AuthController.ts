@@ -11,23 +11,46 @@ import { log } from "../util/logger";
 // secure in production (HTTPS only). Logout clears the cookie with the SAME
 // options — the browser only removes it when the attributes match.
 //
-// In production the dashboard is a DIFFERENT origin from this API, so the
-// cookie must be sameSite:"none" (with secure:true) to be sent on those
-// cross-origin credentialed requests — that's what lets us drop the old
-// leak-prone "?token=" URL handoff entirely. Locally everything is http on
-// localhost, where sameSite:"none" without HTTPS is rejected, so we fall back
-// to "lax".
-// In production all three services run under one registrable domain
-// (www / app / api subdomains), so the auth cookie is first-party on every
-// request and sameSite:"lax" is both sufficient and the safer default —
-// it blocks the cross-site CSRF vectors that sameSite:"none" would allow.
-// secure:true (HTTPS-only) is kept in production. Locally everything is http
-// on localhost, where "lax" also works.
+// sameSite is the one attribute the deployment has to decide, because it
+// depends on where the three services end up:
+//
+//   All three under one registrable domain (api. / app. / www.example.com):
+//     leave COOKIE_SAMESITE unset. "lax" is first-party on every request and
+//     blocks the cross-site vectors "none" would open up. This is the default
+//     and the safer choice.
+//
+//   Unrelated domains (the platform defaults — *.onrender.com for the API,
+//     *.netlify.app for the frontends): set COOKIE_SAMESITE=none. Without it
+//     the browser simply declines to send the cookie and every authenticated
+//     request comes back 401, with nothing in any log to explain why.
 const isProd = process.env.NODE_ENV === "production";
+
+const SAME_SITE_VALUES = ["lax", "none", "strict"] as const;
+type SameSite = (typeof SAME_SITE_VALUES)[number];
+
+function resolveSameSite(): SameSite {
+  const configured = (process.env.COOKIE_SAMESITE ?? "lax").trim().toLowerCase();
+  if (!SAME_SITE_VALUES.includes(configured as SameSite)) {
+    throw new Error(
+      `COOKIE_SAMESITE must be one of ${SAME_SITE_VALUES.join(", ")} — got "${configured}"`,
+    );
+  }
+  // Browsers reject SameSite=None unless Secure is also set, and secure is
+  // tied to NODE_ENV. Getting this combination wrong drops the cookie on every
+  // single login, so refuse to boot rather than fail silently in the browser.
+  if (configured === "none" && !isProd) {
+    throw new Error(
+      "COOKIE_SAMESITE=none requires NODE_ENV=production — that is what sets " +
+        "Secure on the cookie, and browsers reject SameSite=None without it",
+    );
+  }
+  return configured as SameSite;
+}
+
 const TOKEN_COOKIE: CookieOptions = {
   httpOnly: true,
   secure: isProd,
-  sameSite: "lax",
+  sameSite: resolveSameSite(),
 };
 const TOKEN_MAX_AGE_MS = 12 * 60 * 60 * 1000; // match the JWT's 12-hour lifetime
 

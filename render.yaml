@@ -6,15 +6,19 @@
 #   GEMINI_API_KEY      — Gemini SANDBOX trading API key (exchange.sandbox.gemini.com)
 #   GEMINI_API_SECRET   — Gemini SANDBOX trading API secret
 #
-# IMPORTANT — auth cookie/domain requirement: the auth cookie is sameSite:"lax",
-# which is only sent on same-site requests. If the backend and the two Netlify
-# frontends are deployed on unrelated domains (e.g. the default *.onrender.com
-# and *.netlify.app), the cookie will NOT be sent cross-site and login will
-# silently fail (401s, not a crash). Before going live, either:
-#   (a) put all three services on one registrable domain via custom domains
-#       (e.g. api.yoursite.com, app.yoursite.com, www.yoursite.com), or
-#   (b) change TOKEN_COOKIE.sameSite to "none" in backend/controllers/
-#       AuthController.ts (secure:true is already conditioned on NODE_ENV).
+# IMPORTANT — auth cookie/domain requirement. The auth cookie defaults to
+# sameSite:"lax", which is only sent on same-site requests. If the backend and
+# the two Netlify frontends sit on unrelated domains (the platform defaults,
+# *.onrender.com and *.netlify.app), the browser will NOT send it and login
+# fails silently — 401s on every authenticated request, not a crash, and
+# nothing in any log to explain it. Pick one before going live:
+#   (a) Put all three services on one registrable domain via custom domains
+#       (api.yoursite.com, app.yoursite.com, www.yoursite.com) and leave
+#       COOKIE_SAMESITE unset. This is the safer option: the cookie stays
+#       first-party and "lax" blocks the cross-site vectors "none" allows.
+#   (b) Keep the platform domains and set COOKIE_SAMESITE=none below. Requires
+#       NODE_ENV=production, which is what sets Secure — the backend refuses to
+#       boot on that combination rather than let the browser drop the cookie.
 #
 # IMPORTANT — this service must run as EXACTLY ONE instance. Four pieces of
 # state live in process memory, and a second instance breaks each one quietly,
@@ -52,4 +56,12 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_API_SECRET
+        sync: false
+      # Leave unset for option (a) above. Set to "none" for option (b).
+      - key: COOKIE_SAMESITE
+        sync: false
+      # Where orphaned-fill alerts go — any endpoint that accepts a JSON POST.
+      # Unset is supported (alerts stay on stdout) but the backend warns at
+      # boot in production, because that alert has no other reader.
+      - key: MONITORING_WEBHOOK_URL
         sync: false
