@@ -43,8 +43,6 @@ const renderOrders = (rows: Order[]) => {
 beforeEach(() => {
   jest.clearAllMocks();
   (axios.isAxiosError as unknown as jest.Mock).mockReturnValue(false);
-  // Cancelling asks for confirmation; assume "yes" unless a test says otherwise.
-  window.confirm = jest.fn(() => true);
 });
 
 describe("Orders partial-fill reporting", () => {
@@ -89,33 +87,75 @@ describe("Orders partial-fill reporting", () => {
 });
 
 describe("Orders cancel confirmation", () => {
-  test("declining the confirmation cancels nothing", async () => {
-    // Cancelling is irreversible and sits one click from every resting row, so
-    // it must not be possible to trigger it by a stray click.
-    window.confirm = jest.fn(() => false);
-    renderOrders([order({ status: "OPEN", qty: 1, limitPrice: 49000 })]);
-    fireEvent.click(await screen.findByRole("button", { name: /cancel/i }));
+  const openDialog = async () => {
+    renderOrders([order({ status: "OPEN", side: "BUY", qty: 1, symbol: "BTCUSD", limitPrice: 49000 })]);
+    fireEvent.click(await screen.findByRole("button", { name: /cancel .*order for/i }));
+    return screen.getByRole("alertdialog");
+  };
 
-    expect(window.confirm).toHaveBeenCalled();
+  test("clicking Cancel opens a dialog rather than cancelling immediately", async () => {
+    // Cancelling is irreversible and sits one click from every resting row, so
+    // a single stray click must not reach the API.
+    await openDialog();
     expect(mockedPost).not.toHaveBeenCalled();
   });
 
-  test("the prompt names the order being cancelled", async () => {
-    renderOrders([order({ status: "OPEN", side: "BUY", qty: 1, symbol: "BTCUSD", limitPrice: 49000 })]);
-    fireEvent.click(await screen.findByRole("button", { name: /cancel/i }));
+  test("the dialog names exactly what is being cancelled", async () => {
+    const dialog = await openDialog();
+    expect(dialog).toHaveTextContent("BUY");
+    expect(dialog).toHaveTextContent("BTCUSD");
+    expect(dialog).toHaveTextContent("49,000.00");
+    expect(dialog).toHaveTextContent(/cannot be undone/i);
+  });
 
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("BTCUSD"));
-    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("buy"));
+  test("dismissing it cancels nothing", async () => {
+    await openDialog();
+    fireEvent.click(screen.getByRole("button", { name: /keep it/i }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(mockedPost).not.toHaveBeenCalled();
+  });
+
+  test("Escape dismisses it", async () => {
+    await openDialog();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(mockedPost).not.toHaveBeenCalled();
+  });
+
+  test("confirming sends exactly one cancel, even on a double click", async () => {
+    // The dialog stays open and disabled while the request is in flight —
+    // window.confirm gave nowhere to show progress, so a slow cancel invited a
+    // second click and a second request.
+    let resolve!: (v: unknown) => void;
+    mockedPost.mockReturnValue(new Promise((r) => { resolve = r; }));
+    await openDialog();
+
+    const confirm = screen.getByRole("button", { name: /cancel order/i });
+    fireEvent.click(confirm);
+    expect(screen.getByRole("button", { name: /cancelling/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /cancelling/i }));
+
+    resolve({ data: { order: order({ status: "CANCELLED" }) } });
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1));
+  });
+
+  test("the confirm button takes focus so the keyboard can act on it", async () => {
+    await openDialog();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /cancel order/i }));
   });
 });
 
 describe("Orders cancel outcome", () => {
-  test("reports a fill when the order filled before the cancel landed", async () => {
+  /** Open the row's dialog and confirm it — the path a user actually takes. */
+  const cancelThroughDialog = async () => {
     renderOrders([order({ status: "OPEN", qty: 1, limitPrice: 49000 })]);
-    await screen.findByRole("button", { name: /cancel/i });
-    mockedPost.mockResolvedValue({ data: { order: order({ status: "FILLED" }) } });
+    fireEvent.click(await screen.findByRole("button", { name: /cancel .*order for/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^cancel order$/i }));
+  };
 
-    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+  test("reports a fill when the order filled before the cancel landed", async () => {
+    mockedPost.mockResolvedValue({ data: { order: order({ status: "FILLED" }) } });
+    await cancelThroughDialog();
 
     await waitFor(() =>
       expect(toast.info).toHaveBeenCalledWith(expect.stringContaining("filled before the cancel"))
@@ -124,14 +164,19 @@ describe("Orders cancel outcome", () => {
   });
 
   test("reports a cancel when the order really was cancelled", async () => {
-    renderOrders([order({ status: "OPEN", qty: 1, limitPrice: 49000 })]);
-    await screen.findByRole("button", { name: /cancel/i });
     mockedPost.mockResolvedValue({ data: { order: order({ status: "CANCELLED" }) } });
-
-    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+    await cancelThroughDialog();
 
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("Cancelled"))
     );
+  });
+
+  test("a failed cancel surfaces the error and closes the dialog", async () => {
+    mockedPost.mockRejectedValue(new Error("network down"));
+    await cancelThroughDialog();
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });

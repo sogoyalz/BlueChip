@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "react-toastify";
 
 import DataTable, { Column } from "./shared/DataTable";
 import EmptyState from "./shared/EmptyState";
+import ConfirmDialog from "./shared/ConfirmDialog";
+import GeneralContext from "./GeneralContext";
 import { Order, OrderStatus } from "../types";
 import { API_URL } from "../config";
 import { num } from "./shared/format";
@@ -41,6 +43,13 @@ const Orders = () => {
       });
   }, []);
 
+  // Refetch as soon as an order is accepted, rather than waiting up to 10s for
+  // the next poll and leaving the user wondering where it went.
+  const { orderVersion } = useContext(GeneralContext);
+  useEffect(() => {
+    if (orderVersion > 0) fetchOrders(false);
+  }, [orderVersion, fetchOrders]);
+
   useEffect(() => {
     // Auth rides the httpOnly cookie; this component only mounts once the
     // session is verified, so no per-render token guard is needed.
@@ -50,16 +59,13 @@ const Orders = () => {
     return () => clearInterval(timer);
   }, [fetchOrders]);
 
+  // The order awaiting confirmation, and the one currently being cancelled.
+  // Separate, because the dialog stays open and disabled while in flight.
+  const [pendingCancel, setPendingCancel] = useState<Order | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
   const handleCancel = async (order: Order) => {
-    // Cancelling is irreversible and sits one click from every resting row.
-    const limit = typeof order.limitPrice === "number" ? ` at ${num(order.limitPrice)}` : "";
-    if (
-      !window.confirm(
-        `Cancel this ${order.side.toLowerCase()} order — ${order.qty} ${order.symbol}${limit}?`
-      )
-    ) {
-      return;
-    }
+    setCancelling(true);
     try {
       const { data } = await axios.post<{ order: Order }>(
         `${API_URL}/api/orders/${order._id}/cancel`,
@@ -79,6 +85,9 @@ const Orders = () => {
         ? err.response?.data?.message
         : undefined;
       toast.error(message || "Could not cancel order.");
+    } finally {
+      setCancelling(false);
+      setPendingCancel(null);
     }
     fetchOrders(false);
   };
@@ -152,7 +161,11 @@ const Orders = () => {
       label: "",
       render: (o) =>
         o.status === "OPEN" ? (
-          <button className="btn btn-grey btn-small" onClick={() => handleCancel(o)}>
+          <button
+            className="btn btn-grey btn-small"
+            aria-label={`Cancel ${o.side.toLowerCase()} order for ${o.qty} ${o.symbol}`}
+            onClick={() => setPendingCancel(o)}
+          >
             Cancel
           </button>
         ) : null,
@@ -182,6 +195,31 @@ const Orders = () => {
           />
         }
       />
+
+      {pendingCancel && (
+        <ConfirmDialog
+          title="Cancel this order?"
+          destructive
+          pending={cancelling}
+          confirmLabel="Cancel order"
+          pendingLabel="Cancelling…"
+          cancelLabel="Keep it"
+          body={
+            <>
+              This cannot be undone. The order is resting on the exchange and may
+              still fill before the cancellation reaches it.
+              <span className="confirm-detail">
+                {pendingCancel.side} {pendingCancel.qty} {pendingCancel.symbol}
+                {typeof pendingCancel.limitPrice === "number"
+                  ? ` at ${num(pendingCancel.limitPrice)}`
+                  : ""}
+              </span>
+            </>
+          }
+          onConfirm={() => handleCancel(pendingCancel)}
+          onDismiss={() => setPendingCancel(null)}
+        />
+      )}
     </>
   );
 };

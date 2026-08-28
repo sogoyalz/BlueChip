@@ -139,6 +139,14 @@ const Summary = () => {
         </div>
       </div>
 
+      {holdingsLoaded && holdings.length === 0 && (
+        <p className="first-run" role="note">
+          Nothing held on the shared account yet — pick a coin from the
+          watchlist to place your first order. Orders execute for real on
+          Gemini's sandbox exchange with test funds.
+        </p>
+      )}
+
       <div className="row cols-4">
         <StatCard
           label="Portfolio value"

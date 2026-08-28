@@ -1,0 +1,61 @@
+/* Confirmation dialog — same overlay + card language as the trade modal. */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 110; /* above the trade modal */
+  padding: 16px;
+}
+
+.confirm-dialog {
+  width: min(420px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+}
+
+.confirm-title {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.confirm-body {
+  margin: 0 0 20px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.confirm-body .confirm-detail {
+  display: block;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.confirm-actions .btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (pointer: coarse) {
+  .confirm-actions .btn {
+    min-height: 44px;
+  }
+}

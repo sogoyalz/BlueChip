@@ -107,6 +107,9 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
       // the next submission is a genuinely new order and needs a fresh key.
       clientOrderIdRef.current = null;
       const order = data.order;
+      // Announce before the toasts: whatever the outcome, the server has
+      // recorded it and the orders list should stop showing a stale view.
+      generalContext.notifyOrderPlaced();
       if (order.status === "FILLED") {
         toast.success(
           `${isBuy ? "Bought" : "Sold"} ${order.qty} ${base} at ${usd(order.fillPrice!)}`

@@ -131,3 +131,29 @@ describe("Summary chart with nothing to plot", () => {
   });
 });
 
+describe("first run", () => {
+  test("points a new account toward its first order", async () => {
+    mockedGet.mockImplementation((url: string) => {
+      if (url.includes("/api/holdings")) return Promise.resolve({ data: [] });
+      if (url.includes("/api/account")) return Promise.resolve({ data: account });
+      return Promise.resolve({ data: { points: [] } });
+    });
+    render(<Summary />);
+    expect(await screen.findByRole("note")).toHaveTextContent(/watchlist/i);
+  });
+
+  test("says nothing once the account holds something", async () => {
+    mockedGet.mockImplementation(routeGet);
+    render(<Summary />);
+    await waitFor(() => expect(screen.getAllByText(/\$/).length).toBeGreaterThan(0));
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  test("stays silent while holdings are still loading", () => {
+    // "We do not know yet" must not render as "you own nothing".
+    mockedGet.mockImplementation(() => new Promise(() => {}));
+    render(<Summary />);
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+});
+

@@ -31,6 +31,8 @@ const renderWatchList = () =>
         closeTradeWindow: jest.fn(),
         openBuyWindow: jest.fn(),
         closeBuyWindow: jest.fn(),
+        orderVersion: 0,
+        notifyOrderPlaced: jest.fn(),
       }}
     >
       <PricesContext.Provider value={{ prices, symbols, isStale: false }}>

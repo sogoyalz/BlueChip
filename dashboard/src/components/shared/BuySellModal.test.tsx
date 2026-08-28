@@ -24,6 +24,7 @@ const mockedToastSuccess = toast.success as jest.Mock;
 const mockedToastInfo = toast.info as jest.Mock;
 
 const closeTradeWindow = jest.fn();
+const notifyOrderPlaced = jest.fn();
 
 const renderModal = () =>
   render(
@@ -33,6 +34,8 @@ const renderModal = () =>
         closeTradeWindow,
         openBuyWindow: jest.fn(),
         closeBuyWindow: jest.fn(),
+        orderVersion: 0,
+        notifyOrderPlaced,
       }}
     >
       <PricesContext.Provider
@@ -86,6 +89,32 @@ describe("BuySellModal client-side validation", () => {
 });
 
 describe("BuySellModal submit outcomes", () => {
+  test.each([
+    ["FILLED", { status: "FILLED", qty: 0.1, fillPrice: 50000 }],
+    ["OPEN", { status: "OPEN", qty: 0.1, limitPrice: 45000 }],
+    ["PARTIALLY_FILLED", { status: "PARTIALLY_FILLED", qty: 1, filledQty: 0.4, fillPrice: 50000 }],
+    ["REJECTED", { status: "REJECTED", reason: "Order did not fill" }],
+  ])("a %s response tells the orders list to refetch", async (_label, order) => {
+    // Whatever the outcome, the server has recorded it. Without this the new
+    // order was invisible until the next 10s poll and looked like it vanished.
+    mockedPost.mockResolvedValue({ data: { order } });
+    renderModal();
+    await screen.findByText(/Cash/);
+    enterQty("0.1");
+    clickBuy();
+    await waitFor(() => expect(notifyOrderPlaced).toHaveBeenCalledTimes(1));
+  });
+
+  test("a failed submission does NOT tell the list to refetch", async () => {
+    mockedPost.mockRejectedValue(new Error("Network Error"));
+    renderModal();
+    await screen.findByText(/Cash/);
+    enterQty("0.1");
+    clickBuy();
+    await waitFor(() => expect(mockedToastError).toHaveBeenCalled());
+    expect(notifyOrderPlaced).not.toHaveBeenCalled();
+  });
+
   test("a FILLED response shows a success toast and closes the window", async () => {
     mockedPost.mockResolvedValue({
       data: { order: { status: "FILLED", qty: 0.1, fillPrice: 50000 } },
