@@ -53,6 +53,71 @@ afterEach(() => {
   jest.useRealTimers();
 });
 
+describe("stale DATA, as opposed to a stale stream", () => {
+  // The broadcaster ships the whole price cache every 2s whether or not
+  // anything in it changed. So when Gemini's feed dies, frames keep arriving
+  // on schedule carrying frozen prices — and a check based on "did a frame
+  // arrive recently" stays happy while the numbers on screen are minutes old.
+  // That is precisely the situation the Live/Delayed pill exists to report.
+  //
+  // Both timestamps come from the server, so comparing them is immune to clock
+  // skew between the browser and the backend.
+  const tickAt = (updatedAt: number) => ({
+    BTCUSD: { price: 50000, changePct24h: 1, updatedAt, source: "ws" as const },
+  });
+
+  test("flags stale when the frame carries prices the server already knew were old", () => {
+    render(
+      <PricesProvider>
+        <Probe />
+      </PricesProvider>
+    );
+    const serverNow = 1_000_000;
+    act(() =>
+      FakeEventSource.last!.emit("prices", {
+        prices: tickAt(serverNow - 60_000), // a minute stale when it was sent
+        updatedAt: serverNow,
+      })
+    );
+    expect(screen.getByTestId("stale")).toHaveTextContent("true");
+    // ...and the last known prices are still shown, marked delayed not blanked
+    expect(screen.getByTestId("btc")).toHaveTextContent("50000");
+  });
+
+  test("does not flag stale for prices that were fresh when sent", () => {
+    render(
+      <PricesProvider>
+        <Probe />
+      </PricesProvider>
+    );
+    const serverNow = 1_000_000;
+    act(() =>
+      FakeEventSource.last!.emit("prices", {
+        prices: tickAt(serverNow - 500),
+        updatedAt: serverNow,
+      })
+    );
+    expect(screen.getByTestId("stale")).toHaveTextContent("false");
+  });
+
+  test("recovers when the feed comes back", () => {
+    render(
+      <PricesProvider>
+        <Probe />
+      </PricesProvider>
+    );
+    const serverNow = 1_000_000;
+    act(() =>
+      FakeEventSource.last!.emit("prices", { prices: tickAt(serverNow - 60_000), updatedAt: serverNow })
+    );
+    expect(screen.getByTestId("stale")).toHaveTextContent("true");
+    act(() =>
+      FakeEventSource.last!.emit("prices", { prices: tickAt(serverNow + 1000), updatedAt: serverNow + 1000 })
+    );
+    expect(screen.getByTestId("stale")).toHaveTextContent("false");
+  });
+});
+
 describe("PricesContext staleness", () => {
   test("clears the stale flag once the stream delivers prices", () => {
     render(

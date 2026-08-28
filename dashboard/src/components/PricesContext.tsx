@@ -18,6 +18,34 @@ const STALE_AFTER_MS = 15000;
 // live for as long as the backend stays down.
 const STALE_CHECK_MS = 5000;
 
+interface PricesPayload {
+  prices: Record<string, TickerPrice>;
+  updatedAt?: number; // server clock when the frame was built
+}
+
+/**
+ * Are the prices themselves fresh — as distinct from "did a frame just arrive"?
+ *
+ * The backend broadcasts its whole price cache on a timer whether or not
+ * anything changed, so during a Gemini outage frames keep landing on schedule
+ * carrying frozen prices. Judging freshness by arrival would leave the pill
+ * reading "Live" over minutes-old numbers, which is the one case it exists for.
+ *
+ * Both timestamps are the server's own, so the comparison carries no dependency
+ * on the browser's clock agreeing with the backend's.
+ */
+export function isPayloadFresh(
+  payload: PricesPayload,
+  maxAgeMs: number = STALE_AFTER_MS
+): boolean {
+  const entries = Object.values(payload.prices ?? {});
+  if (entries.length === 0) return false;
+  const newest = Math.max(...entries.map((e) => e.updatedAt ?? 0));
+  if (!newest) return false;
+  const sentAt = payload.updatedAt ?? newest;
+  return sentAt - newest <= maxAgeMs;
+}
+
 interface PricesContextValue {
   prices: Record<string, TickerPrice>;
   symbols: SymbolInfo[];
@@ -50,17 +78,18 @@ export const PricesProvider = ({ children }: { children: React.ReactNode }) => {
       })
       .catch((err) => console.error("Failed to load symbols:", err));
 
-    const apply = (next: Record<string, TickerPrice>) => {
+    const apply = (payload: PricesPayload) => {
       if (cancelled) return;
       lastSuccess.current = Date.now();
-      setPrices(next);
-      setIsStale(Object.keys(next).length === 0);
+      setPrices(payload.prices);
+      // Freshness of the DATA, not of the delivery.
+      setIsStale(!isPayloadFresh(payload));
     };
 
     const fetchPrices = () => {
       axios
-        .get<{ prices: Record<string, TickerPrice> }>(`${API_URL}/api/prices`)
-        .then((res) => apply(res.data.prices))
+        .get<PricesPayload>(`${API_URL}/api/prices`)
+        .then((res) => apply(res.data))
         .catch(() => {
           if (cancelled) return;
           if (Date.now() - lastSuccess.current > STALE_AFTER_MS) setIsStale(true);
@@ -80,7 +109,7 @@ export const PricesProvider = ({ children }: { children: React.ReactNode }) => {
         es = new EventSource(`${API_URL}/api/stream`);
         es.addEventListener("prices", (e) => {
           try {
-            apply(JSON.parse((e as MessageEvent).data).prices);
+            apply(JSON.parse((e as MessageEvent).data) as PricesPayload);
           } catch {
             // malformed frame — ignore, next one is 2s away
           }
