@@ -27,6 +27,17 @@ export const TERMINAL_STATUSES = new Set<OrderStatus>([
   "REJECTED",
 ]);
 
+/**
+ * Statuses that mean the order is still live on the exchange's book.
+ *
+ * PARTIALLY_FILLED belongs here: a resting limit that partly crossed keeps its
+ * remainder on the book, and orderSync has always reconciled it as resting.
+ * The cancel path and the UI used to gate on OPEN alone, which made exactly
+ * those orders uncancellable — no button, and a 409 claiming "already filled
+ * or cancelled" for an order the exchange still held.
+ */
+export const RESTING_STATUSES: OrderStatus[] = ["OPEN", "PARTIALLY_FILLED"];
+
 /** What the exchange told us about an order, at some moment. */
 export interface Observation {
   status: OrderStatus;
@@ -72,6 +83,27 @@ export async function applyObservation(
   observed: Observation
 ): Promise<HydratedDocument<IOrder> | null> {
   const notTerminal = [...TERMINAL_STATUSES];
+
+  // The database-side twin of shouldApplyObservation, branch by branch:
+  //   filledQty < observed          -> strictly newer knowledge, always apply
+  //   field missing, observed > 0   -> the same case: stored is 0, observed is
+  //                                    more ($lt never matches a missing field,
+  //                                    so this needs its own branch)
+  //   qty tie (equal, or both zero) -> only refine a non-terminal status
+  const newerKnowledge: Record<string, unknown>[] = [
+    { filledQty: trusted({ $lt: observed.filledQty }) },
+  ];
+  if (observed.filledQty > 0) {
+    newerKnowledge.push({ filledQty: trusted({ $exists: false }) });
+  }
+  const qtyTie: Record<string, unknown>[] = [
+    {
+      filledQty: trusted({ $exists: false }),
+      status: trusted({ $nin: notTerminal }),
+    },
+    { filledQty: observed.filledQty, status: trusted({ $nin: notTerminal }) },
+  ];
+
   const set: Record<string, unknown> = { status: observed.status };
   if (observed.filledQty > 0) {
     set.filledQty = observed.filledQty;
@@ -85,17 +117,7 @@ export async function applyObservation(
   // operator as a literal field value (a CastError at query time, invisible to
   // any test that mocks the model).
   return OrdersModel.findOneAndUpdate(
-    {
-      _id: orderId,
-      $or: [
-        { filledQty: trusted({ $lt: observed.filledQty }) },
-        {
-          filledQty: trusted({ $exists: false }),
-          status: trusted({ $nin: notTerminal }),
-        },
-        { filledQty: observed.filledQty, status: trusted({ $nin: notTerminal }) },
-      ],
-    },
+    { _id: orderId, $or: [...newerKnowledge, ...qtyTie] },
     { $set: set },
     { returnDocument: "after" }
   );

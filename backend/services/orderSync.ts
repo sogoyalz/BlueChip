@@ -12,7 +12,9 @@ import {
   clearBalancesCache,
 } from "./geminiPrivate";
 import { snapshotNow } from "./snapshots";
-import { applyObservation } from "./orderState";
+import { applyObservation, RESTING_STATUSES } from "./orderState";
+import { exchangeAmount } from "../util/money";
+import { log } from "../util/logger";
 
 export const DEFAULT_SYNC_MS = 5_000;
 // Orders that have left Gemini's book need a status lookup of their own. Cap
@@ -27,7 +29,7 @@ let syncing = false;
 export async function tick(): Promise<void> {
   const resting = await OrdersModel.find({
     // trusted(): this $in is ours, not user input — sanitizeFilter is on globally.
-    status: trusted({ $in: ["OPEN", "PARTIALLY_FILLED"] }),
+    status: trusted({ $in: RESTING_STATUSES }),
   }).limit(500);
   if (resting.length === 0) return;
 
@@ -48,7 +50,7 @@ export async function tick(): Promise<void> {
   } catch (err) {
     // Without the active list we can't tell "still resting" from "gone", and
     // guessing would mean N lookups again. Leave it for the next tick.
-    console.error("[orderSync] could not list active orders:", err);
+    log.error("orderSync.active_list_failed", { err: err as Error });
     return;
   }
 
@@ -63,7 +65,10 @@ export async function tick(): Promise<void> {
         lookups += 1;
         result = await getGeminiOrderStatus(order.geminiOrderId);
       }
-      const executed = Number(result.executed_amount);
+      const executed = exchangeAmount(result.executed_amount);
+      // remaining stays a raw Number() on purpose: NaN === 0 is false, so an
+      // unparseable remaining can never satisfy the FILLED test below — which is
+      // the safe direction, since FILLED is terminal and never re-reconciled.
       const remaining = Number(result.remaining_amount);
 
       const status = result.is_cancelled
@@ -99,7 +104,7 @@ export async function tick(): Promise<void> {
         void snapshotNow();
       }
     } catch (err) {
-      console.error(`[orderSync] order ${order._id} failed:`, err);
+      log.error("orderSync.order_failed", { orderId: String(order._id), err: err as Error });
     }
   }
 }
@@ -110,7 +115,7 @@ export function startOrderSync(intervalMs: number = DEFAULT_SYNC_MS): void {
     if (syncing) return; // never overlap slow passes
     syncing = true;
     void tick()
-      .catch((err) => console.error("[orderSync] tick failed:", err))
+      .catch((err) => log.error("orderSync.tick_failed", { err: err as Error }))
       .finally(() => {
         syncing = false;
       });

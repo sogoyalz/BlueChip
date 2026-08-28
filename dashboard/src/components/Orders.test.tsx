@@ -87,6 +87,43 @@ describe("Orders partial-fill reporting", () => {
   });
 });
 
+describe("Orders cancel affordance", () => {
+  // The exchange still holds the remainder of a partially-filled limit, so a
+  // cancel is both possible and meaningful. Gating the button on OPEN alone
+  // hid it at exactly the moment the order became most worth cancelling.
+  test("a partially-filled limit order still offers Cancel", async () => {
+    renderOrders([
+      order({
+        _id: "o-partial",
+        status: "PARTIALLY_FILLED",
+        type: "LIMIT",
+        qty: 1,
+        filledQty: 0.4,
+        limitPrice: 50000,
+      }),
+    ]);
+    expect(
+      await screen.findByRole("button", { name: /cancel buy order/i }),
+    ).toBeInTheDocument();
+  });
+
+  test("a partially-filled MARKET order does not — nothing is resting", async () => {
+    // MARKET is immediate-or-cancel: it can wear PARTIALLY_FILLED for the few
+    // seconds before orderSync resolves it, but there is no book entry left.
+    renderOrders([
+      order({ _id: "o-mkt", status: "PARTIALLY_FILLED", type: "MARKET", qty: 1, filledQty: 0.4 }),
+    ]);
+    await screen.findByText("BTCUSD");
+    expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
+  });
+
+  test("a filled order offers no Cancel", async () => {
+    renderOrders([order({ _id: "o-filled", status: "FILLED", type: "LIMIT", qty: 1 })]);
+    await screen.findByText("BTCUSD");
+    expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument();
+  });
+});
+
 describe("Orders cancel confirmation", () => {
   const openDialog = async () => {
     renderOrders([order({ status: "OPEN", side: "BUY", qty: 1, symbol: "BTCUSD", limitPrice: 49000 })]);

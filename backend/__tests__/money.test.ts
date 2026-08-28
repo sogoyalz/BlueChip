@@ -1,4 +1,4 @@
-import { roundUsd, roundQty, toCents, fromCents, QTY_EPSILON } from "../util/money";
+import { QTY_EPSILON, exchangeAmount, fromCents, roundQty, roundUsd, toCents } from "../util/money";
 
 describe("roundUsd", () => {
   test("rounds to 2 decimal places", () => {
@@ -81,3 +81,32 @@ describe("non-finite money never reaches a total", () => {
   });
 });
 
+
+describe("exchangeAmount", () => {
+  test("passes finite amounts through", () => {
+    expect(exchangeAmount("0.4")).toBe(0.4);
+    expect(exchangeAmount("0")).toBe(0);
+    expect(exchangeAmount(1.5)).toBe(1.5);
+  });
+
+  test("collapses an unparseable amount to zero, not NaN", () => {
+    // NaN fails BOTH `=== 0` and `> 0`, so a garbled executed_amount used to
+    // land a MARKET order in PARTIALLY_FILLED with no filledQty recorded —
+    // a status the order could never leave by itself.
+    for (const bad of ["", "abc", undefined, null, {}]) {
+      expect(exchangeAmount(bad)).toBe(0);
+    }
+  });
+
+  test("collapses a non-finite amount to zero", () => {
+    expect(exchangeAmount("1e999")).toBe(0);
+    expect(exchangeAmount(Infinity)).toBe(0);
+    expect(exchangeAmount(-Infinity)).toBe(0);
+  });
+
+  test("zero is non-terminal, so the sync can still correct it", () => {
+    // The safety argument for choosing 0: an order recorded as unfilled stays
+    // reconcilable, whereas anything implying a complete fill would be final.
+    expect(exchangeAmount("garbage")).toBe(0);
+  });
+});

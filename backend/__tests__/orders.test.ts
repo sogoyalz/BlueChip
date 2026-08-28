@@ -485,10 +485,11 @@ describe("GET /api/orders", () => {
     await request(app)
       .get("/api/orders?status=open")
       .set("Authorization", `Bearer ${token()}`);
-    expect(mockedOrders.find).toHaveBeenCalledWith({
-      userId: "user-1",
-      status: "OPEN",
-    });
+    // "resting" is what the test always meant; it just asserted the narrower
+    // OPEN. A partially-filled limit still has its remainder on the book.
+    const filter = mockedOrders.find.mock.calls.at(-1)![0];
+    expect(filter.userId).toBe("user-1");
+    expect(filter.status.$in).toEqual(["OPEN", "PARTIALLY_FILLED"]);
   });
 });
 
@@ -523,6 +524,47 @@ describe("POST /api/orders/:id/cancel", () => {
     expect(res.status).toBe(404);
     expect(mockedOrders.findOne).not.toHaveBeenCalled();
     expect(mockedCancelGeminiOrder).not.toHaveBeenCalled();
+  });
+
+  test("a PARTIALLY_FILLED limit order can still be cancelled", async () => {
+    // A resting limit that partly crossed keeps its remainder on the book, so
+    // the exchange will still accept a cancel. The route used to query
+    // status:"OPEN" only, so it 409'd with "already filled or cancelled" for an
+    // order the exchange was still holding — and the Cancel button disappeared
+    // from the UI at the same moment, leaving the remainder stuck on the shared
+    // account until it happened to fill.
+    const partial = fakeOrderDoc({
+      status: "PARTIALLY_FILLED",
+      filledQty: 0.4,
+      geminiOrderId: "gemini-1",
+      userId: "user-1",
+    });
+    mockedOrders.findOne.mockResolvedValue(partial);
+    mockedOrders.findOneAndUpdate.mockImplementation(conditionalUpdateOn(partial));
+    mockedCancelGeminiOrder.mockResolvedValue(
+      geminiFill({ is_cancelled: true, executed_amount: "0.4" })
+    );
+
+    const res = await request(app)
+      .post("/api/orders/64a000000000000000000001/cancel")
+      .set("Authorization", `Bearer ${token()}`)
+      .set("X-Requested-With", "XMLHttpRequest");
+
+    expect(res.status).toBe(200);
+    expect(mockedCancelGeminiOrder).toHaveBeenCalledWith("gemini-1");
+    expect(partial.status).toBe("CANCELLED");
+  });
+
+  test("the lookup asks for every resting status, not just OPEN", async () => {
+    mockedOrders.findOne.mockResolvedValue(null);
+    await request(app)
+      .post("/api/orders/64a000000000000000000001/cancel")
+      .set("Authorization", `Bearer ${token()}`)
+      .set("X-Requested-With", "XMLHttpRequest");
+
+    // The value carries mongoose's trusted marker, so assert on the array.
+    const filter = mockedOrders.findOne.mock.calls.at(-1)![0];
+    expect(filter.status.$in).toEqual(["OPEN", "PARTIALLY_FILLED"]);
   });
 
   test("returns 409 when the order is no longer open locally", async () => {

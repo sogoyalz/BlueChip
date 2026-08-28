@@ -47,7 +47,7 @@ afterAll(async () => {
 // Imported after connect so model registration behaves as it does at boot.
 import { OrdersModel } from "../model/OrdersModel";
 import { SnapshotModel } from "../model/SnapshotModel";
-import { applyObservation } from "../services/orderState";
+import { applyObservation, shouldApplyObservation } from "../services/orderState";
 import { IOrder } from "../schemas/OrdersSchema";
 
 const userId = () => new mongoose.Types.ObjectId();
@@ -158,6 +158,67 @@ describe("conditional order writes (bug 3: the query must actually execute)", ()
       status: "PARTIALLY_FILLED",
       filledQty: 0.1,
     });
+  });
+
+  test("a fill reaches a TERMINAL order that predates filledQty", async () => {
+    // The in-memory rule says apply (0 stored < 0.5 observed is strictly newer
+    // knowledge, and that branch ignores terminal status). The database filter
+    // used to disagree: its missing-field branch also demanded a non-terminal
+    // status, so this write was silently dropped and the two halves of the
+    // "same rule, expressed twice" contract diverged.
+    //
+    // Reachable for real: an order marked REJECTED before filledQty existed,
+    // which orderSync later observes as having executed.
+    const o = await OrdersModel.create(baseOrder({ status: "REJECTED" }));
+    await OrdersModel.collection.updateOne({ _id: o._id }, { $unset: { filledQty: "" } });
+
+    const stored = await OrdersModel.findById(o._id);
+    expect(
+      shouldApplyObservation(
+        { status: stored!.status, filledQty: stored!.filledQty },
+        { status: "FILLED", filledQty: 0.5 }
+      )
+    ).toBe(true);
+
+    await applyObservation(o._id, { status: "FILLED", filledQty: 0.5, fillPrice: 40000 });
+    expect(await OrdersModel.findById(o._id)).toMatchObject({
+      status: "FILLED",
+      filledQty: 0.5,
+    });
+  });
+
+  test("the rule and the database filter agree across the whole matrix", async () => {
+    // The filter is the database-side twin of shouldApplyObservation. Anywhere
+    // they disagree is a write that silently vanishes (or one that should have
+    // been rejected and was not), so assert them against each other directly.
+    const statuses = ["OPEN", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "REJECTED"] as const;
+    for (const status of statuses) {
+      for (const storedQty of [undefined, 0, 0.4]) {
+        for (const observedQty of [0, 0.4, 1]) {
+          const o = await OrdersModel.create(baseOrder({ status, filledQty: storedQty }));
+          if (storedQty === undefined) {
+            await OrdersModel.collection.updateOne(
+              { _id: o._id },
+              { $unset: { filledQty: "" } }
+            );
+          }
+          const expected = shouldApplyObservation(
+            { status, filledQty: storedQty },
+            { status: "FILLED", filledQty: observedQty }
+          );
+          const result = await applyObservation(o._id, {
+            status: "FILLED",
+            filledQty: observedQty,
+          });
+          expect({ status, storedQty, observedQty, applied: result !== null }).toEqual({
+            status,
+            storedQty,
+            observedQty,
+            applied: expected,
+          });
+        }
+      }
+    }
   });
 });
 

@@ -9,7 +9,7 @@ import { isSupported } from "../config/symbols";
 import { getPrice, isFresh } from "./priceFeed";
 import { placeGeminiOrder, cancelGeminiOrder, clearBalancesCache } from "./geminiPrivate";
 import { snapshotNow } from "./snapshots";
-import { MAX_NOTIONAL, MAX_QTY, roundQty, roundUsd } from "../util/money";
+import { MAX_NOTIONAL, MAX_QTY, exchangeAmount, roundQty, roundUsd } from "../util/money";
 import { IOrder, OrderSide, OrderType } from "../schemas/OrdersSchema";
 import { log, alert } from "../util/logger";
 
@@ -170,7 +170,10 @@ export async function placeOrder(
     throw new OrderError(502, "Order could not be placed on the exchange");
   }
 
-  const executed = Number(geminiResult.executed_amount);
+  const executed = exchangeAmount(geminiResult.executed_amount);
+  // remaining stays a raw Number() on purpose: NaN === 0 is false, so an
+  // unparseable remaining can never satisfy the FILLED test below — which is
+  // the safe direction, since FILLED is terminal and never re-reconciled.
   const remaining = Number(geminiResult.remaining_amount);
   const status =
     executed === 0
@@ -251,7 +254,7 @@ export async function cancelOrder(
   geminiOrderId: string
 ): Promise<{ status: "CANCELLED" | "FILLED"; fillPrice?: number; filledQty?: number }> {
   const result = await cancelGeminiOrder(geminiOrderId);
-  const executed = Number(result.executed_amount);
+  const executed = exchangeAmount(result.executed_amount);
   if (result.is_cancelled) {
     return {
       status: "CANCELLED",

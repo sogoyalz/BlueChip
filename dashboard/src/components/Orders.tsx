@@ -7,7 +7,7 @@ import DataTable, { Column } from "./shared/DataTable";
 import EmptyState from "./shared/EmptyState";
 import ConfirmDialog from "./shared/ConfirmDialog";
 import GeneralContext from "./GeneralContext";
-import { Order, OrderStatus } from "../types";
+import { Order, OrderStatus, isResting } from "../types";
 import { API_URL } from "../config";
 import { num } from "./shared/format";
 
@@ -123,8 +123,10 @@ const Orders = () => {
       key: "price",
       label: "Price",
       render: (o) => {
-        // A resting order's own price is the relevant one; the qty column
-        // carries any partial fill it has taken so far.
+        // Only an untouched resting order shows its own price. The moment any
+        // of it trades, the traded price is the fact — showing the limit price
+        // for a partially-filled order would say nothing executed, which is
+        // false. The qty column carries the resting remainder.
         if (o.status === "OPEN") {
           return o.type === "LIMIT" ? `${num(o.limitPrice)} (limit)` : "—";
         }
@@ -159,8 +161,11 @@ const Orders = () => {
     {
       key: "actions",
       label: "",
+      // LIMIT as well as resting: a MARKET order is immediate-or-cancel and can
+      // wear PARTIALLY_FILLED for the few seconds before orderSync resolves it,
+      // but there is nothing on the book to cancel.
       render: (o) =>
-        o.status === "OPEN" ? (
+        isResting(o.status) && o.type === "LIMIT" ? (
           <button
             className="btn btn-grey btn-small"
             aria-label={`Cancel ${o.side.toLowerCase()} order for ${o.qty} ${o.symbol}`}
@@ -172,7 +177,7 @@ const Orders = () => {
     },
   ];
 
-  const openCount = allOrders.filter((o) => o.status === "OPEN").length;
+  const openCount = allOrders.filter((o) => isResting(o.status)).length;
 
   return (
     <>

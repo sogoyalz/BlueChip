@@ -43,3 +43,18 @@ export function toCents(usd: number): number {
 export function fromCents(cents: number): number {
   return cents / 100;
 }
+
+/**
+ * An EXECUTED amount reported by the exchange, defensively. Gemini sends
+ * amounts as strings; Number("garbage") is NaN, and NaN slips past both the
+ * `=== 0` and the `> 0` test, landing the order in a status that matches
+ * neither. Treating non-finite as 0 means "no fill observed", which is
+ * non-terminal — orderSync reconciles the truth on its next pass.
+ *
+ * Do NOT use this for remaining_amount: collapsing an unparseable remaining
+ * to 0 would satisfy the FILLED test, and FILLED is terminal.
+ */
+export function exchangeAmount(raw: unknown): number {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}

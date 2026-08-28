@@ -1,12 +1,12 @@
 import { Router } from "express";
-import { Types } from "mongoose";
+import { Types, trusted } from "mongoose";
 import { OrdersModel } from "../model/OrdersModel";
 import { verifyToken } from "../middlewares/AuthMiddleware";
 import { orderLimiter } from "../middlewares/rateLimit";
 import { OrderError, placeOrder, cancelOrder } from "../services/orderEngine";
 import { clearBalancesCache } from "../services/geminiPrivate";
 import { snapshotNow } from "../services/snapshots";
-import { applyObservation } from "../services/orderState";
+import { applyObservation, RESTING_STATUSES } from "../services/orderState";
 import { log } from "../util/logger";
 
 const router = Router();
@@ -32,12 +32,15 @@ router.post("/api/orders", verifyToken, orderLimiter, async (req, res) => {
   }
 });
 
-// The user's own orders, newest first. ?status=open narrows to resting
-// limit orders.
+// The user's own orders, newest first. ?status=open narrows to orders still
+// resting on the exchange — which includes a partially-filled limit whose
+// remainder is on the book, not just untouched OPEN ones.
 router.get("/api/orders", verifyToken, async (req, res) => {
   try {
     const filter: Record<string, unknown> = { userId: req.user!._id };
-    if (req.query.status === "open") filter.status = "OPEN";
+    if (req.query.status === "open") {
+      filter.status = trusted({ $in: RESTING_STATUSES });
+    }
     const orders = await OrdersModel.find(filter)
       .sort({ createdAt: -1 })
       .limit(100);
@@ -61,13 +64,17 @@ router.post("/api/orders/:id/cancel", verifyToken, orderLimiter, async (req, res
       res.status(404).json({ message: "Order not found" });
       return;
     }
+    // Resting means OPEN or PARTIALLY_FILLED: a limit order that partly
+    // crossed keeps its remainder on the book, and refusing to cancel it
+    // left exactly those orders stuck on the shared account until they
+    // happened to fill.
     const order = await OrdersModel.findOne({
       _id: orderId,
       userId: req.user!._id,
-      status: "OPEN",
+      status: trusted({ $in: RESTING_STATUSES }),
     });
     if (!order || !order.geminiOrderId) {
-      res.status(409).json({ message: "Order not open (already filled or cancelled)" });
+      res.status(409).json({ message: "Order is not resting (already filled or cancelled)" });
       return;
     }
 
