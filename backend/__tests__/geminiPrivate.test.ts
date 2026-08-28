@@ -178,16 +178,31 @@ describe("retry policy", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
-  test("a read retries once past a network failure", async () => {
+  test("a read retries once past a refused connection", async () => {
     const mockFetch = jest
       .fn()
-      .mockRejectedValueOnce(Object.assign(new Error("timed out"), { name: "TimeoutError" }))
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
       .mockResolvedValueOnce(okJson([{ order_id: "1" }]));
     global.fetch = mockFetch as unknown as typeof fetch;
 
     const { getGeminiActiveOrders } = require("../services/geminiPrivate");
     await expect(getGeminiActiveOrders()).resolves.toEqual([{ order_id: "1" }]);
     expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("a read does NOT retry a timeout — the second attempt is not cheap", async () => {
+    // /v1/balances coalesces concurrent callers, so retrying an 8s timeout
+    // would hold every one of them for sixteen seconds.
+    const mockFetch = jest
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error("timed out"), { name: "TimeoutError" }),
+      );
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await expect(getGeminiBalances()).rejects.toThrow(/timed out/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   test("a read gives up after one retry rather than hammering", async () => {

@@ -122,6 +122,13 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * blip currently surfaces to the user as a 500 for no good reason.
  *
  * Each attempt re-signs from scratch, because the nonce cannot be reused.
+ *
+ * A timeout is NOT retried, even on a read. /v1/balances backs /api/account
+ * and /api/holdings and coalesces concurrent callers onto one request, so a
+ * second 8-second attempt would hold every waiting caller for sixteen seconds
+ * to chase a call that has already proven slow. Retrying is for failures that
+ * come back fast — a 5xx, a refused connection — where the second attempt
+ * costs almost nothing.
  */
 async function geminiPrivatePost<T>(
   path: string,
@@ -138,6 +145,8 @@ async function geminiPrivatePost<T>(
       // burns a nonce.
       const status = err instanceof GeminiHttpError ? err.status : undefined;
       if (status !== undefined && status < 500) throw err;
+      // See above: a retry must be cheap, and a second timeout is not.
+      if ((err as Error)?.name === "TimeoutError") throw err;
       if (attempt >= retries) break;
       await sleep(RETRY_DELAY_MS);
     }

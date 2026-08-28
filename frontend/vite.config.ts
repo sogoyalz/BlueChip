@@ -15,6 +15,11 @@ export default defineConfig({
     // deploy config, the E2E harness and the docs all stay correct.
     outDir: "build",
     sourcemap: true,
+    // Stated rather than inherited. Create React App targeted a browserslist
+    // query; dropping it would have silently handed that decision to Vite's
+    // default. These are the versions that support the syntax shipped here,
+    // and they are what the app is tested against.
+    target: ["chrome107", "edge107", "firefox104", "safari16"],
   },
 
   server: { port: 3000 },

@@ -85,8 +85,15 @@ test.describe("the order journey, end to end", () => {
     await page.getByRole("link", { name: /orders/i }).click();
     const orders = page.getByRole("table", { name: /your orders/i });
     await expect(orders).toBeVisible();
-    await expect(orders.getByText("BTCUSD").first()).toBeVisible({ timeout: 8_000 });
-    await expect(orders.getByText(/0\.25/).first()).toBeVisible();
+
+    // Assert against ONE row rather than "0.25 appears somewhere in the
+    // table" — a loose match would pass on a price that happens to contain
+    // the digits, and would not notice a BUY placed as a SELL.
+    const row = orders.getByRole("row").filter({ hasText: "BTCUSD" }).first();
+    await expect(row).toBeVisible({ timeout: 8_000 });
+    await expect(row).toContainText(/buy/i);
+    await expect(row).toContainText("0.25");
+    await expect(row).toContainText(/filled/i);
   });
 
   test("the session survives a reload, and logout actually ends it", async ({ page }) => {

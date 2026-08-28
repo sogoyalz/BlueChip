@@ -67,11 +67,24 @@ function buildApp(name: "frontend" | "dashboard", env: Record<string, string>) {
     return newest;
   };
 
+  // Everything the bundle is built FROM, not just src/. Watching src alone
+  // meant an edit to index.html or vite.config.ts served a stale bundle and
+  // the suite passed against code that no longer existed — silently testing
+  // the wrong thing is worse than failing.
+  const inputs = ["src", "index.html", "vite.config.ts", "package.json"].map((f) =>
+    path.join(ROOT, name, f),
+  );
+  const newestInput = () =>
+    Math.max(
+      ...inputs.filter(fs.existsSync).map((f) =>
+        fs.statSync(f).isDirectory() ? newestSource(f) : fs.statSync(f).mtimeMs,
+      ),
+    );
+
   if (fs.existsSync(marker)) {
     const previous = JSON.parse(fs.readFileSync(marker, "utf8"));
     const sameEnv = JSON.stringify(previous.env) === want;
-    const upToDate = newestSource(path.join(ROOT, name, "src")) < previous.builtAt;
-    if (sameEnv && upToDate) return outDir;
+    if (sameEnv && newestInput() < previous.builtAt) return outDir;
   }
 
   process.stdout.write(`[e2e] building ${name}…\n`);
