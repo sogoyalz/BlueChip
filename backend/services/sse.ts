@@ -105,6 +105,17 @@ export function stopSseBroadcast(): void {
   timer = null;
   if (keepAliveTimer) clearInterval(keepAliveTimer);
   keepAliveTimer = null;
+  // End the responses, don't just forget them. These connections are held open
+  // indefinitely by design, and an HTTP server will not finish closing while
+  // any are still alive — so on a SIGTERM the process would hang until the
+  // platform force-killed it, mid-flight.
+  for (const res of clients) {
+    try {
+      res.end();
+    } catch {
+      // socket already gone — nothing to close
+    }
+  }
   clients.clear();
   perIp.clear();
 }
