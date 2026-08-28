@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "react-toastify";
@@ -35,6 +35,11 @@ const MarketDetail = () => {
   const [timeframe, setTimeframe] = useState<CandleTimeframe>("1hr");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Sliced once per candle change rather than on every render: a fresh array
+  // here would defeat the memo on CandleChart, since the prop identity is what
+  // it compares.
+  const visibleCandles = useMemo(() => candles.slice(-120), [candles]);
 
   const pair = symbol.toUpperCase();
   const info = symbols.find((s) => s.symbol === pair);
@@ -132,7 +137,7 @@ const MarketDetail = () => {
           {loading ? (
             <Skeleton label="Loading chart…" />
           ) : (
-            <CandleChart candles={candles.slice(-120)} />
+            <CandleChart candles={visibleCandles} />
           )}
         </div>
       </div>

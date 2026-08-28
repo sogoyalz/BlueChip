@@ -1,13 +1,19 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { Route, Routes } from "react-router-dom";
 
 import Funds from "./Funds";
 import Holdings from "./Holdings";
-import MarketDetail from "./MarketDetail";
 import Orders from "./Orders";
 import Summary from "./Summary";
 import WatchList from "./WatchList";
+import Skeleton from "./shared/Skeleton";
 import { GeneralContextProvider } from "./GeneralContext";
+
+// The market page is the only thing that needs the candlestick chart, which
+// brings chartjs-chart-financial and the date-fns time adapter with it. Loading
+// that on first paint costs every visitor for a route most never open, so it is
+// split into its own chunk and fetched when the route is actually visited.
+const MarketDetail = lazy(() => import("./MarketDetail"));
 
 const Dashboard = () => {
   return (
@@ -17,13 +23,15 @@ const Dashboard = () => {
       <div className="dashboard-container">
         <WatchList />
         <div className="content">
-          <Routes>
-            <Route path="/" element={<Summary />} />
-            <Route path="/orders" element={<Orders />} />
-            <Route path="/holdings" element={<Holdings />} />
-            <Route path="/funds" element={<Funds />} />
-            <Route path="/market/:symbol" element={<MarketDetail />} />
-          </Routes>
+          <Suspense fallback={<Skeleton label="Loading…" />}>
+            <Routes>
+              <Route path="/" element={<Summary />} />
+              <Route path="/orders" element={<Orders />} />
+              <Route path="/holdings" element={<Holdings />} />
+              <Route path="/funds" element={<Funds />} />
+              <Route path="/market/:symbol" element={<MarketDetail />} />
+            </Routes>
+          </Suspense>
         </div>
       </div>
     </GeneralContextProvider>
