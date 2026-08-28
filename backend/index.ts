@@ -9,26 +9,19 @@ import helmet from "helmet";
 
 import cookieParser from "cookie-parser";
 
-import { OrdersModel } from "./model/OrdersModel";
-import { UserModel } from "./model/UserModel";
 import authRoute from "./routes/AuthRoute";
 import marketRoute from "./routes/MarketRoute";
 import orderRoute from "./routes/OrderRoute";
 import portfolioRoute from "./routes/PortfolioRoute";
-import { verifyToken } from "./middlewares/AuthMiddleware";
-import { toCents, fromCents } from "./util/money";
-import { getPrice, startPolling } from "./services/priceFeed";
+import { startPolling } from "./services/priceFeed";
 import { startGeminiWs } from "./services/geminiWs";
 import { startOrderSync } from "./services/orderSync";
-import { getGeminiBalances } from "./services/geminiPrivate";
 import { startSnapshots } from "./services/snapshots";
 import { startSseBroadcast } from "./services/sse";
-import { stopGeminiWs } from "./services/geminiWs";
-import { stopPolling } from "./services/priceFeed";
-import { stopOrderSync } from "./services/orderSync";
-import { stopSnapshots } from "./services/snapshots";
-import { stopSseBroadcast } from "./services/sse";
 import { authLimiter, generalLimiter } from "./middlewares/rateLimit";
+import accountRoute from "./routes/AccountRoute";
+import { migrate } from "./migrations";
+import { installShutdownHandlers } from "./lifecycle";
 import { requireCsrfHeader } from "./middlewares/csrf";
 import { isWsConnected } from "./services/geminiWs";
 import { SYMBOLS } from "./config/symbols";
@@ -113,64 +106,7 @@ app.use("/", authRoute); // mounts /signup, /login, /
 app.use("/", marketRoute); // mounts /api/symbols, /api/prices (public)
 app.use("/", orderRoute); // mounts /api/orders* (auth)
 app.use("/", portfolioRoute); // mounts /api/portfolio/history (auth)
-
-// The shared Gemini sandbox account's holdings — every logged-in user sees
-// the same balances, enriched with live prices from the shared cache.
-app.get("/api/holdings", verifyToken, async (_req, res) => {
-  try {
-    const balances = await getGeminiBalances();
-    const holdings = balances
-      // Number.isFinite as well as > 0: a malformed amount can be Infinity,
-      // which passes a bare `> 0` and then serialises to null over JSON.
-      .filter(
-        (b) =>
-          b.currency !== "USD" &&
-          Number.isFinite(Number(b.amount)) &&
-          Number(b.amount) > 0
-      )
-      .map((b) => {
-        const symbol = `${b.currency}USD`;
-        const live = getPrice(symbol);
-        return {
-          symbol,
-          qty: Number(b.amount),
-          price: live?.price,
-          dayChangePct: live?.changePct24h,
-        };
-      });
-    res.json(holdings);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch holdings" });
-  }
-});
-
-app.get("/api/account", verifyToken, async (req, res) => {
-  try {
-    const user = req.user!;
-    const balances = await getGeminiBalances();
-    const usd = balances.find((b) => b.currency === "USD");
-    // Accumulate in integer cents so the portfolio total never drifts sub-cent
-    // across many holdings; convert back to dollars only for the response.
-    const balanceCents = toCents(Number(usd?.amount ?? 0));
-    let holdingsCents = 0;
-    for (const b of balances) {
-      if (b.currency === "USD") continue;
-      const live = getPrice(`${b.currency}USD`);
-      holdingsCents += toCents(Number(b.amount) * (live?.price ?? 0));
-    }
-    res.json({
-      username: user.username,
-      email: user.email,
-      balance: fromCents(balanceCents),
-      portfolioValue: fromCents(balanceCents + holdingsCents),
-      createdAt: user.createdAt,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch account" });
-  }
-});
+app.use("/", accountRoute); // mounts /api/holdings, /api/account (auth)
 
 // Health check — also the keep-alive ping target so the free-tier host
 // doesn't sleep (which would pause order syncing and snapshots).
@@ -189,136 +125,6 @@ app.get("/healthz", (_req, res) => {
 // DESTRUCTIVE: this drops collections. It must NOT run on every boot (the
 // free-tier host restarts constantly). It only runs when RUN_MIGRATIONS=true
 // is explicitly set for a deploy, then should be unset again.
-const ORDER_IDEMPOTENCY_INDEX = "userId_1_clientOrderId_1";
-
-export const migrate = async (): Promise<void> => {
-  // Legacy field cleanup goes through the RAW driver collection, not the
-  // models. Mongoose's `strict` mode silently strips paths that are not in the
-  // schema from update operators — and `balance`/`realizedPnl` were removed
-  // from the schemas in the pivot, which is exactly why we are unsetting them.
-  // Through a model this $unset becomes an empty update and does nothing at
-  // all, with no error and modifiedCount undefined. Verified against a real
-  // database: the fields survived two full migration runs.
-  const users = mongoose.connection.collection("users");
-  const orders = mongoose.connection.collection("orders");
-  const u = await users.updateMany({}, { $unset: { balance: "", realizedPnl: "" } });
-  const o = await orders.updateMany({}, { $unset: { realizedPnl: "" } });
-  console.log(
-    `migrate: cleared legacy fields from ${u.modifiedCount} user(s) and ${o.modifiedCount} order(s)`
-  );
-
-  // The (userId, clientOrderId) index used to be `sparse`, which does not mean
-  // "skip documents without the field" on a COMPOUND index — see the comment in
-  // schemas/OrdersSchema.ts. MongoDB cannot change an existing index's options,
-  // so a legacy one has to be dropped before the corrected partial index can be
-  // created.
-  //
-  // Only drop it if it IS the legacy one. Re-running the migration must not
-  // destroy a healthy index and then depend on something else to rebuild it.
-  const existing = (await orders.indexes()).find(
-    (i) => i.name === ORDER_IDEMPOTENCY_INDEX
-  );
-  if (existing && !existing.partialFilterExpression) {
-    await orders.dropIndex(ORDER_IDEMPOTENCY_INDEX);
-    console.log("migrate: dropped legacy sparse clientOrderId index");
-  } else if (existing) {
-    console.log("migrate: clientOrderId index already correct — leaving it alone");
-  }
-
-  // Build the schema's indexes explicitly and WAIT for them. Mongoose's
-  // autoIndex would otherwise do this in the background, racing the drop above:
-  // if its createIndex lands first it fails with IndexOptionsConflict (reported
-  // on an `index` event nothing listens to), and the drop then leaves the
-  // collection with NO uniqueness constraint at all, silently.
-  await OrdersModel.createIndexes();
-
-  // Post-condition. If this is wrong, idempotency protection is not in force
-  // and duplicate submissions can double-insert, so say so unmissably rather
-  // than letting a "successful" deploy hide it.
-  const after = (await orders.indexes()).find(
-    (i) => i.name === ORDER_IDEMPOTENCY_INDEX
-  );
-  if (after?.partialFilterExpression) {
-    console.log("migrate: clientOrderId partial index verified");
-  } else {
-    console.error(
-      "migrate: FAILED — the (userId, clientOrderId) partial index is not in " +
-        "place. Order idempotency is NOT protected. Do not clear " +
-        "RUN_MIGRATIONS; investigate before taking traffic. Found:",
-      after ?? "no index"
-    );
-  }
-
-  // Check before dropping so the log reflects what actually happened — a
-  // migration that reports work it didn't do is worse than a quiet one.
-  const present = new Set(
-    (await mongoose.connection.db!.listCollections().toArray()).map((c) => c.name)
-  );
-  for (const collection of ["positions", "holdings", "holding"]) {
-    if (!present.has(collection)) continue;
-    try {
-      await mongoose.connection.dropCollection(collection);
-      console.log(`migrate: dropped legacy ${collection} collection`);
-    } catch (err) {
-      console.warn(`migrate: could not drop ${collection}:`, (err as Error).message);
-    }
-  }
-};
-
-
-// How long to wait for in-flight work before giving up and exiting anyway.
-// Render sends SIGTERM and force-kills after its own grace period, so this has
-// to be comfortably shorter than that.
-const SHUTDOWN_TIMEOUT_MS = 10_000;
-
-/**
- * Shut down in the order that avoids losing work.
- *
- * Without this, a deploy's SIGTERM kills the process instantly: an order could
- * be placed on the exchange with its local write still in flight, which is the
- * one state this system cannot reconcile on its own. Stopping the background
- * timers first means no NEW work starts, then the HTTP server drains what is
- * already running, and only then does the database connection close.
- *
- * SSE streams are ended explicitly (see stopSseBroadcast) because an HTTP
- * server will not finish closing while any connection is still open, and these
- * are held open indefinitely by design.
- */
-function installShutdownHandlers(server: { close(cb: (err?: Error) => void): void }): void {
-  let shuttingDown = false;
-
-  const shutdown = async (signal: string): Promise<void> => {
-    if (shuttingDown) return; // a second signal must not re-enter
-    shuttingDown = true;
-    console.log(`[shutdown] ${signal} received — draining`);
-
-    // Belt and braces: never hang forever holding a deploy open.
-    const forceExit = setTimeout(() => {
-      console.error("[shutdown] timed out waiting to drain — exiting anyway");
-      process.exit(1);
-    }, SHUTDOWN_TIMEOUT_MS);
-    forceExit.unref();
-
-    try {
-      stopOrderSync();
-      stopSnapshots();
-      stopPolling();
-      stopGeminiWs();
-      stopSseBroadcast();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-      await mongoose.disconnect();
-      console.log("[shutdown] clean");
-      process.exit(0);
-    } catch (err) {
-      console.error("[shutdown] failed:", err);
-      process.exit(1);
-    }
-  };
-
-  process.on("SIGTERM", () => void shutdown("SIGTERM"));
-  process.on("SIGINT", () => void shutdown("SIGINT"));
-}
-
 const start = async (): Promise<void> => {
   try {
     if (!uri) {
@@ -361,3 +167,4 @@ if (require.main === module) {
 }
 
 export { app };
+export { migrate } from "./migrations";

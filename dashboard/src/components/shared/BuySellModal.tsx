@@ -9,18 +9,13 @@ import { Account, Order, OrderType, TradeMode } from "../../types";
 import { API_URL } from "../../config";
 
 import "./BuySellModal.css";
+import { usd } from "./format";
 
 interface BuySellModalProps {
   uid: string; // Gemini pair, e.g. "BTCUSD"
   initialMode?: TradeMode;
 }
 
-const fmt$ = (n: number) =>
-  "$" +
-  n.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 
 const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
   const [mode, setMode] = useState<TradeMode>(initialMode);
@@ -114,7 +109,7 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
       const order = data.order;
       if (order.status === "FILLED") {
         toast.success(
-          `${isBuy ? "Bought" : "Sold"} ${order.qty} ${base} at ${fmt$(order.fillPrice!)}`
+          `${isBuy ? "Bought" : "Sold"} ${order.qty} ${base} at ${usd(order.fillPrice!)}`
         );
         generalContext.closeTradeWindow();
       } else if (order.status === "PARTIALLY_FILLED") {
@@ -123,12 +118,12 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
         const filled = order.filledQty ?? order.qty;
         toast.success(
           `${isBuy ? "Bought" : "Sold"} ${filled} of ${order.qty} ${base} at ` +
-            `${fmt$(order.fillPrice!)} — the rest didn't fill.`
+            `${usd(order.fillPrice!)} — the rest didn't fill.`
         );
         generalContext.closeTradeWindow();
       } else if (order.status === "OPEN") {
         toast.info(
-          `Limit ${mode.toLowerCase()} placed: ${order.qty} ${base} @ ${fmt$(order.limitPrice!)}`
+          `Limit ${mode.toLowerCase()} placed: ${order.qty} ${base} @ ${usd(order.limitPrice!)}`
         );
         generalContext.closeTradeWindow();
       } else {
@@ -169,7 +164,7 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
           <span className="window-title">
             {base}
             <span className="live-quote">
-              {livePrice ? ` · ${fmt$(livePrice)}` : ""}
+              {livePrice ? ` · ${usd(livePrice)}` : ""}
             </span>
           </span>
           <div className="mode-tabs" role="tablist">
@@ -248,7 +243,7 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
                   type="text"
                   readOnly
                   tabIndex={-1}
-                  value={livePrice ? fmt$(livePrice) : "…"}
+                  value={livePrice ? usd(livePrice) : "…"}
                 />
               </fieldset>
             )}
@@ -257,8 +252,8 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
 
         <div className="buttons">
           <span className="num">
-            {isBuy ? "Est. cost" : "Est. proceeds"} {fmt$(estimated)}
-            {balance !== null && ` · Cash ${fmt$(balance)}`}
+            {isBuy ? "Est. cost" : "Est. proceeds"} {usd(estimated)}
+            {balance !== null && ` · Cash ${usd(balance)}`}
           </span>
           <div>
             <button

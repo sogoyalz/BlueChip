@@ -11,6 +11,7 @@ import PnLValue from "./shared/PnLValue";
 import Skeleton from "./shared/Skeleton";
 import { Candle, CandleTimeframe } from "../types";
 import { API_URL } from "../config";
+import { usd } from "./shared/format";
 
 const TIMEFRAMES: { value: CandleTimeframe; label: string }[] = [
   { value: "15m", label: "15m" },
@@ -19,12 +20,6 @@ const TIMEFRAMES: { value: CandleTimeframe; label: string }[] = [
   { value: "1day", label: "1D" },
 ];
 
-const fmt$ = (n: number) =>
-  "$" +
-  n.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 
 const MarketDetail = () => {
   const { symbol = "" } = useParams();
@@ -89,7 +84,7 @@ const MarketDetail = () => {
           <p className="dash-date">
             {tick ? (
               <>
-                {fmt$(tick.price)}{" "}
+                {usd(tick.price)}{" "}
                 <PnLValue
                   text={`${tick.changePct24h >= 0 ? "+" : ""}${tick.changePct24h.toFixed(2)}% (24h)`}
                   showArrow

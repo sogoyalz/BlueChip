@@ -5,13 +5,8 @@ import { toast } from "react-toastify";
 import StatCard from "./shared/StatCard";
 import { Account } from "../types";
 import { API_URL } from "../config";
+import { usd } from "./shared/format";
 
-const fmt$ = (n: number) =>
-  "$" +
-  n.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 
 const Funds = () => {
   const [account, setAccount] = useState<Account | null>(null);
@@ -38,10 +33,10 @@ const Funds = () => {
 
       <div className="row cols-4">
         <StatCard label="Cash balance" sub="available to trade">
-          {account ? fmt$(account.balance) : "—"}
+          {account ? usd(account.balance) : "—"}
         </StatCard>
         <StatCard label="Portfolio value" sub="cash + holdings">
-          {account ? fmt$(portfolioValue) : "—"}
+          {account ? usd(portfolioValue) : "—"}
         </StatCard>
       </div>
 

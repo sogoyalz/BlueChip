@@ -22,7 +22,10 @@ router.post("/api/orders", verifyToken, orderLimiter, async (req, res) => {
       res.status(err.status).json({ message: err.message });
       return;
     }
-    console.error(err);
+    console.error(
+      `[orders] place failed user=${req.user?._id} symbol=${req.body?.symbol}:`,
+      err
+    );
     res.status(500).json({ message: "Failed to place order" });
   }
 });
@@ -38,7 +41,7 @@ router.get("/api/orders", verifyToken, async (req, res) => {
       .limit(100);
     res.json(orders);
   } catch (err) {
-    console.error(err);
+    console.error(`[orders] list failed user=${req.user?._id}:`, err);
     res.status(500).json({ message: "Failed to fetch orders" });
   }
 });
@@ -84,7 +87,10 @@ router.post("/api/orders/:id/cancel", verifyToken, orderLimiter, async (req, res
     // If a fresher observation won, report THAT state, not the one we lost with.
     res.json({ order: updated ?? (await OrdersModel.findById(order._id)) });
   } catch (err) {
-    console.error(err);
+    console.error(
+      `[orders] cancel failed user=${req.user?._id} order=${req.params.id}:`,
+      err
+    );
     res.status(500).json({ message: "Failed to cancel order" });
   }
 });

@@ -115,7 +115,7 @@ export const Signup = async (req: Request, res: Response): Promise<void> => {
       user: { id: user._id, email: user.email, username: user.username },
     });
   } catch (error) {
-    console.error(error);
+    console.error("[auth] signup failed:", error);
     res.status(500).json({ message: "Something went wrong. Please try again." });
   }
 };
@@ -161,7 +161,7 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
     // Token lives only in the httpOnly cookie set above, not the body.
     res.status(200).json({ message: "User logged in successfully", success: true });
   } catch (error) {
-    console.error(error);
+    console.error("[auth] login failed:", error);
     res.status(500).json({ message: "Something went wrong. Please try again." });
   }
 };

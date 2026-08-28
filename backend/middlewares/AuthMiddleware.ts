@@ -57,7 +57,7 @@ export const userVerification = (req: Request, res: Response): void => {
       }
       return res.json({ status: false });
     } catch (dbErr) {
-      console.error(dbErr);
+      console.error("[auth] session check failed:", dbErr);
       return res.status(500).json({ status: false });
     }
   });
@@ -91,7 +91,7 @@ export const verifyToken = (req: Request, res: Response, next: NextFunction): vo
       req.user = user; // make the authenticated user available downstream
       next();
     } catch (dbErr) {
-      console.error(dbErr);
+      console.error("[auth] token verification failed:", dbErr);
       return res.status(500).json({ status: false, message: "Auth check failed" });
     }
   });

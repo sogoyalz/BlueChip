@@ -5,17 +5,10 @@ import { toast } from "react-toastify";
 import PnLValue from "./shared/PnLValue";
 import StatCard from "./shared/StatCard";
 import { linePath } from "./shared/chartPath";
+import { usdAbs, signedUsd, pct } from "./shared/format";
 import { Account, Holding } from "../types";
 import { API_URL } from "../config";
 
-const fmt$ = (n: number, dp = 2) =>
-  "$" +
-  Math.abs(n).toLocaleString("en-US", {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  });
-const signed$ = (n: number, dp = 2) => (n >= 0 ? "+" : "-") + fmt$(n, dp);
-const fmtPct = (p: number) => (p >= 0 ? "+" : "") + p.toFixed(2) + "%";
 
 const RANGES = ["1D", "1W", "1M", "ALL"] as const;
 
@@ -149,20 +142,20 @@ const Summary = () => {
       <div className="row cols-4">
         <StatCard
           label="Portfolio value"
-          delta={<PnLValue text={money(deltaKnown, () => fmtPct(dayPct))} />}
+          delta={<PnLValue text={money(deltaKnown, () => pct(dayPct))} />}
           sub="shared account: cash + holdings"
         >
-          {money(accountKnown, () => fmt$(portfolioValue, 0))}
+          {money(accountKnown, () => usdAbs(portfolioValue, 0))}
         </StatCard>
         <StatCard
           label="Today's P/L"
-          delta={<PnLValue text={money(deltaKnown, () => fmtPct(dayPct))} showArrow />}
+          delta={<PnLValue text={money(deltaKnown, () => pct(dayPct))} showArrow />}
           sub="unrealized, 24h"
         >
-          {money(holdingsLoaded, () => signed$(dayPL, 0))}
+          {money(holdingsLoaded, () => signedUsd(dayPL, 0))}
         </StatCard>
         <StatCard label="Buying power" sub="available cash">
-          {money(accountKnown, () => fmt$(balance, 0))}
+          {money(accountKnown, () => usdAbs(balance, 0))}
         </StatCard>
       </div>
 
@@ -171,11 +164,11 @@ const Summary = () => {
           <div>
             <p className="chart-label">Portfolio value</p>
             <h3 className="chart-value">
-              {money(accountKnown, () => fmt$(portfolioValue))}
+              {money(accountKnown, () => usdAbs(portfolioValue))}
             </h3>
             <p className="chart-delta">
               <PnLValue
-                text={money(deltaKnown, () => `${signed$(dayPL)} (${fmtPct(dayPct)})`)}
+                text={money(deltaKnown, () => `${signedUsd(dayPL)} (${pct(dayPct)})`)}
               />
               <span className="today">today</span>
             </p>

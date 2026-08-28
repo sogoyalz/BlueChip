@@ -14,6 +14,7 @@ import {
 
 import { SymbolInfo, TickerPrice } from "../types";
 import { DoughnutChart } from "./DoughnoutChart";
+import { price } from "./shared/format";
 
 // Brand ramp: accent reds first, then warm/neutral steps that stay legible on
 // the dark surface; entries beyond the eight slots fold to a muted gray.
@@ -29,10 +30,6 @@ const CATEGORICAL = [
 ];
 const sliceColor = (i: number) => (i < CATEGORICAL.length ? CATEGORICAL[i] : "#4a4a4a");
 
-const fmtPrice = (n: number) =>
-  n >= 1000
-    ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
 const WatchList = () => {
   const { prices, symbols } = usePrices();
@@ -121,7 +118,7 @@ const WatchListItem = ({
           ) : (
             <KeyboardArrowUp className="up" />
           )}
-          <span className="price">{tick ? fmtPrice(tick.price) : "…"}</span>
+          <span className="price">{tick ? price(tick.price) : "…"}</span>
         </div>
       </div>
       {/* Always rendered. Mounting these on mouseenter meant they never

@@ -7,11 +7,8 @@ import DataTable, { Column } from "./shared/DataTable";
 import EmptyState from "./shared/EmptyState";
 import { Order, OrderStatus } from "../types";
 import { API_URL } from "../config";
+import { num } from "./shared/format";
 
-const fmt = (n: number | undefined) =>
-  typeof n === "number" && !isNaN(n)
-    ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : "—";
 
 const STATUS_CLASS: Record<OrderStatus, string> = {
   FILLED: "filled",
@@ -55,7 +52,7 @@ const Orders = () => {
 
   const handleCancel = async (order: Order) => {
     // Cancelling is irreversible and sits one click from every resting row.
-    const limit = typeof order.limitPrice === "number" ? ` at ${fmt(order.limitPrice)}` : "";
+    const limit = typeof order.limitPrice === "number" ? ` at ${num(order.limitPrice)}` : "";
     if (
       !window.confirm(
         `Cancel this ${order.side.toLowerCase()} order — ${order.qty} ${order.symbol}${limit}?`
@@ -120,11 +117,11 @@ const Orders = () => {
         // A resting order's own price is the relevant one; the qty column
         // carries any partial fill it has taken so far.
         if (o.status === "OPEN") {
-          return o.type === "LIMIT" ? `${fmt(o.limitPrice)} (limit)` : "—";
+          return o.type === "LIMIT" ? `${num(o.limitPrice)} (limit)` : "—";
         }
         // Otherwise, if any of it traded, the price it traded at is the fact.
-        if (typeof o.fillPrice === "number") return fmt(o.fillPrice);
-        return o.type === "LIMIT" ? `${fmt(o.limitPrice)} (limit)` : "—";
+        if (typeof o.fillPrice === "number") return num(o.fillPrice);
+        return o.type === "LIMIT" ? `${num(o.limitPrice)} (limit)` : "—";
       },
     },
     {

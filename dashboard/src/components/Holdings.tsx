@@ -9,25 +9,14 @@ import PnLValue from "./shared/PnLValue";
 import StatCard from "./shared/StatCard";
 import { Holding } from "../types";
 import { API_URL } from "../config";
+import { num, usd } from "./shared/format";
 
-// Safe number formatter — a malformed row (null price) won't blank the page.
-const fmt = (n: number | undefined) =>
-  typeof n === "number" && !isNaN(n) ? n.toFixed(2) : "—";
-
-const fmt$ = (n: number) =>
-  typeof n === "number" && !isNaN(n)
-    ? "$" +
-      n.toLocaleString("en-US", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })
-    : "—";
 
 const columns: Column<Holding>[] = [
   { key: "symbol", label: "Asset" },
   { key: "qty", label: "Qty." },
-  { key: "price", label: "Price", render: (h) => fmt(h.price) },
-  { key: "curVal", label: "Cur. val", render: (h) => fmt((h.price ?? 0) * h.qty) },
+  { key: "price", label: "Price", render: (h) => num(h.price) },
+  { key: "curVal", label: "Cur. val", render: (h) => num((h.price ?? 0) * h.qty) },
   {
     key: "day",
     label: "24h chg.",
@@ -129,7 +118,7 @@ const Holdings = () => {
 
       <div className="row">
         <StatCard label="Current value">
-          {loaded ? fmt$(totalCurrent) : "—"}
+          {loaded ? usd(totalCurrent) : "—"}
         </StatCard>
       </div>
       <div className="panel chart-panel">

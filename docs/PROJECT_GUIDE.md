@@ -259,7 +259,9 @@ reconciler would never revisit the order, making the divergence permanent.
 
 | File | What it does |
 |---|---|
-| `index.ts` | Builds the Express app: helmet, CORS (origins trimmed — a stray space would silently match nothing), 10kb JSON cap, cookies, rate limits, CSRF on unsafe methods. Mounts the routes, defines `GET /api/holdings`, `GET /api/account`, `GET /healthz`. On boot: validates symbols against Gemini, starts the WebSocket, REST poller, order reconciler, snapshot sweeper and SSE broadcaster. Exports `app` without listening when imported, which is how tests drive it. Also holds the gated one-shot migration (§7). |
+| `index.ts` | Wiring and boot only (~170 lines). Builds the Express app: helmet, CORS (origins trimmed — a stray space would silently match nothing), 10kb JSON cap, cookies, rate limits, CSRF on unsafe methods. Mounts the routes, defines `GET /api/holdings`, `GET /api/account`, `GET /healthz`. On boot: validates symbols against Gemini, starts the WebSocket, REST poller, order reconciler, snapshot sweeper and SSE broadcaster. Exports `app` without listening when imported, which is how tests drive it. |
+| `migrations.ts` | The gated one-shot migration (§7), split out of index.ts. |
+| `lifecycle.ts` | SIGTERM/SIGINT draining, split out of index.ts. |
 | `config/symbols.ts` | The eight curated Gemini pairs and helpers. Cross-checked against Gemini's live symbol directory at boot so a delisted pair is dropped rather than polled forever; a network failure leaves the list untouched. |
 | `.env.example` | Every environment variable, documented. Mirrored in §8. |
 
@@ -283,6 +285,7 @@ reconciler would never revisit the order, making the divergence permanent.
 | `services/orderBook.ts` | Per-symbol bid/ask levels built from the `l2` feed; a change with quantity 0 removes a level. Serves top-N depth, best price first. |
 | `services/orderEngine.ts` | Validation, MARKET-as-IOC pricing, idempotency, placement, persistence, and the cancel helper. Also the orphaned-fill path: if the local write fails after the order is already live on the exchange, it logs the exchange's order id and still invalidates balances, because the trade happened regardless. |
 | `services/orderSync.ts` | The reconciler described in §4. |
+| `services/account.ts` | Holdings and account totals over the shared sandbox account, in integer cents. Lifted out of the route handlers so the money aggregation is testable without HTTP. |
 | `services/orderState.ts` | The one place order state is written. Applies an exchange observation conditionally and atomically, so a stale writer cannot overwrite a newer one (§5). |
 | `services/snapshots.ts` | Portfolio value in integer cents, on a 15-minute sweep and after every fill. |
 | `services/sse.ts` | The SSE broadcaster: client registry, per-IP cap, price frames, keep-alives. |
@@ -294,6 +297,7 @@ reconciler would never revisit the order, making the divergence permanent.
 | `routes/AuthRoute.ts` | `POST /signup`, `/login`, `/logout`, and `POST /` (session check). |
 | `routes/MarketRoute.ts` | Public: `/api/symbols`, `/api/prices`, `/api/stream`, `/api/book/:symbol`, `/api/candles/:symbol` (TTL-cached, serves stale data rather than an error if Gemini fails). |
 | `routes/OrderRoute.ts` | `POST /api/orders`, `GET /api/orders`, `POST /api/orders/:id/cancel`. Auth + per-user rate limit. |
+| `routes/AccountRoute.ts` | `GET /api/holdings`, `GET /api/account`. Auth. |
 | `routes/PortfolioRoute.ts` | `GET /api/portfolio/history` — snapshots downsampled to ≤200 points, cents converted to dollars at the edge. |
 | `controllers/AuthController.ts` | Signup, login, logout. Cookie options, the timing-equalised comparison, and the revocation bump. |
 | `middlewares/AuthMiddleware.ts` | `extractToken`, `verifyToken` (route guard), `userVerification` (session check). |
@@ -302,10 +306,11 @@ reconciler would never revisit the order, making the divergence permanent.
 | `util/money.ts` | All money and quantity maths. |
 | `util/SecretToken.ts` | Signs the 12-hour JWT with the `tv` claim. |
 
-**Tests** — `__tests__/`, **206** tests. Most run with the models mocked, so
+**Tests** — `__tests__/`, **216** tests. Most run with the models mocked, so
 they need no database and no network and finish in about three seconds.
 
-`persistence.integration.test.ts` is the exception and runs a real MongoDB via
+`persistence.integration.test.ts` and `orderJourney.integration.test.ts` are the
+exceptions and run a real MongoDB via
 `mongodb-memory-server`. It exists because mocked suites are structurally blind
 to anything that is a property of the driver or the server rather than of our
 own logic — three separate bugs here reached a fully passing suite that way (a
@@ -516,6 +521,6 @@ Dashboard and frontend read `REACT_APP_API_URL`, `REACT_APP_LOGIN_URL`, and
 - **8** tradable pairs · **12h** JWT lifetime · **30s** staleness guard ·
   **30s** REST poll · **2s** SSE broadcast · **5s** order reconciliation ·
   **15min** snapshot sweep · **1%** market-order cross
-- **206** backend + **46** dashboard + **16** frontend tests
+- **216** backend + **57** dashboard + **16** frontend tests
 - **1** shared Gemini sandbox account · **1** market-data feed regardless of
   user count

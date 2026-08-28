@@ -57,7 +57,7 @@ router.get("/api/portfolio/history", verifyToken, async (req, res) => {
 
     res.json({ range, points });
   } catch (err) {
-    console.error(err);
+    console.error(`[portfolio] history failed range=${req.query.range}:`, err);
     res.status(500).json({ message: "Failed to fetch portfolio history" });
   }
 });
