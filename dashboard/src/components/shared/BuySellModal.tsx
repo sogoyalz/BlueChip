@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useRef } from "react";
 
 import { TradeMode } from "../../types";
+import { useModalA11y } from "./useModalA11y";
 import { useOrderTicket } from "./useOrderTicket";
 
 import "./BuySellModal.css";
@@ -28,6 +29,10 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
     close,
   } = useOrderTicket(uid, initialMode);
 
+  const modalRef = useRef<HTMLDivElement>(null);
+  // Cancel stays clickable mid-flight, so Escape does the same thing it does.
+  useModalA11y(modalRef, close);
+
   return (
     <div
       className="trade-overlay"
@@ -36,7 +41,10 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
     >
       <div
         className="trade-modal"
+        ref={modalRef}
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         aria-label={`${isBuy ? "Buy" : "Sell"} ${uid}`}
         onClick={(e) => e.stopPropagation()}
       >

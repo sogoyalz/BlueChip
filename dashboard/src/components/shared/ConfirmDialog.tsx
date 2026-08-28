@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useRef } from "react";
 
+import { useModalA11y } from "./useModalA11y";
 import "./ConfirmDialog.css";
 
 interface ConfirmDialogProps {
@@ -36,17 +37,15 @@ const ConfirmDialog = ({
   onConfirm,
   onDismiss,
 }: ConfirmDialogProps) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
 
-  // Focus the confirm button on open, and put Escape back where users expect it.
-  useEffect(() => {
-    confirmRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !pending) onDismiss();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onDismiss, pending]);
+  // Open on the confirm button; Escape is disabled mid-flight for the same
+  // reason the buttons are — one cancel per order.
+  useModalA11y(dialogRef, onDismiss, {
+    initialFocus: confirmRef,
+    escapeDismisses: !pending,
+  });
 
   return (
     <div
@@ -56,6 +55,8 @@ const ConfirmDialog = ({
     >
       <div
         className="confirm-dialog"
+        ref={dialogRef}
+        tabIndex={-1}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-title"

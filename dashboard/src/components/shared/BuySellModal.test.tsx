@@ -256,3 +256,42 @@ describe("BuySellModal idempotency key", () => {
     expect(mockedPost.mock.calls[1][1].clientOrderId).not.toBe(firstKey);
   });
 });
+
+describe("BuySellModal keyboard access", () => {
+  // The ticket is the app's most important interactive surface; before this it
+  // announced role="dialog" but let Tab wander into the page behind it and
+  // ignored Escape entirely.
+  test("announces itself as a modal dialog", () => {
+    renderModal();
+    const dialog = screen.getByRole("dialog", { name: /buy BTCUSD/i });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+  });
+
+  test("focus starts inside the ticket, not on the page behind it", () => {
+    renderModal();
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  test("Tab cycles within the ticket instead of escaping to the page", () => {
+    renderModal();
+    const dialog = screen.getByRole("dialog");
+    const cancel = screen.getByRole("button", { name: /cancel/i });
+    cancel.focus();
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(cancel);
+  });
+
+  test("Escape closes it, the same as Cancel", () => {
+    renderModal();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(closeTradeWindow).toHaveBeenCalledTimes(1);
+  });
+
+  test("the read-only market price stays out of the tab order", () => {
+    renderModal();
+    const price = screen.getByDisplayValue("$50,000.00");
+    expect(price).toHaveAttribute("tabindex", "-1");
+  });
+});
