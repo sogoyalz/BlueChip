@@ -90,3 +90,43 @@ describe("auth rate limiting (runs last — shares the IP budget)", () => {
     expect(blocked.body.message).toMatch(/too many/i);
   });
 });
+
+describe("no sensitive route ships without an auth guard", () => {
+  // A missing verifyToken is the classic fail-open: the route works, tests of
+  // its happy path pass, and it is simply readable by anyone. Rather than trust
+  // that every future route remembers the guard, assert it — unauthenticated
+  // access to anything account-scoped must be refused.
+  const ACCOUNT_SCOPED: Array<[string, string]> = [
+    ["get", "/api/holdings"],
+    ["get", "/api/account"],
+    ["get", "/api/orders"],
+    ["post", "/api/orders"],
+    ["post", "/api/orders/64a000000000000000000001/cancel"],
+    ["get", "/api/portfolio/history"],
+  ];
+
+  test.each(ACCOUNT_SCOPED)("%s %s refuses an unauthenticated caller", async (method, path) => {
+    const req = method === "get"
+      ? request(app).get(path)
+      : request(app).post(path).set("X-Requested-With", "XMLHttpRequest");
+    const res = await req;
+    expect(res.status).toBe(401);
+  });
+
+  test("the public market routes stay public", async () => {
+    // The other half of the contract: these serve the same Gemini-sourced data
+    // to everyone, and locking them by accident would be its own regression.
+    for (const path of ["/api/symbols", "/api/prices", "/healthz"]) {
+      const res = await request(app).get(path);
+      expect(res.status).toBe(200);
+    }
+  });
+
+  test("every state-changing method requires the CSRF header", async () => {
+    for (const path of ["/login", "/signup", "/logout", "/"]) {
+      const res = await request(app).post(path).send({});
+      expect(res.status).toBe(403);
+    }
+  });
+});
+
