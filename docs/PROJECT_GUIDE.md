@@ -235,11 +235,19 @@ dedupes on the same key so the exchange cannot double-fill. The balances cache
 carries a generation counter so a fetch already in flight when a fill
 invalidates the cache cannot republish its pre-fill data.
 
-> **Known gap, not yet fixed:** the cancel route and `orderSync` each load the
-> same order document independently and call `.save()`. Mongoose's default
-> versioning only guards array paths, so two concurrent scalar writes are
-> last-write-wins — a cancel landing during a sync pass can clobber the other's
-> status and fill data. This is tracked as open work.
+The cancel route and `orderSync` both write order state, and they can run at
+the same instant. Neither takes a lock. Instead, both go through one
+conditional atomic update in `services/orderState.ts`, keyed on the single
+thing that is monotonic: **an order's executed amount on the exchange only ever
+increases**, so it doubles as a version number. The observation reporting more
+executed is the more recent truth, whichever write happens to land second, and
+the two orderings converge on the same state.
+
+This replaced a genuine last-write-wins bug. Both writers used to read the
+document, mutate it and `save()`; mongoose's default versioning only guards
+array paths, so a cancel carrying older knowledge could overwrite a fill the
+reconciler had just recorded — and because `CANCELLED` is terminal, the
+reconciler would never revisit the order, making the divergence permanent.
 
 ---
 
@@ -275,6 +283,7 @@ invalidates the cache cannot republish its pre-fill data.
 | `services/orderBook.ts` | Per-symbol bid/ask levels built from the `l2` feed; a change with quantity 0 removes a level. Serves top-N depth, best price first. |
 | `services/orderEngine.ts` | Validation, MARKET-as-IOC pricing, idempotency, placement, persistence, and the cancel helper. Also the orphaned-fill path: if the local write fails after the order is already live on the exchange, it logs the exchange's order id and still invalidates balances, because the trade happened regardless. |
 | `services/orderSync.ts` | The reconciler described in §4. |
+| `services/orderState.ts` | The one place order state is written. Applies an exchange observation conditionally and atomically, so a stale writer cannot overwrite a newer one (§5). |
 | `services/snapshots.ts` | Portfolio value in integer cents, on a 15-minute sweep and after every fill. |
 | `services/sse.ts` | The SSE broadcaster: client registry, per-IP cap, price frames, keep-alives. |
 
@@ -293,7 +302,18 @@ invalidates the cache cannot republish its pre-fill data.
 | `util/money.ts` | All money and quantity maths. |
 | `util/SecretToken.ts` | Signs the 12-hour JWT with the `tv` claim. |
 
-**Tests** — `__tests__/`, **162** tests, no database and no network.
+**Tests** — `__tests__/`, **206** tests. Most run with the models mocked, so
+they need no database and no network and finish in about three seconds.
+
+`persistence.integration.test.ts` is the exception and runs a real MongoDB via
+`mongodb-memory-server`. It exists because mocked suites are structurally blind
+to anything that is a property of the driver or the server rather than of our
+own logic — three separate bugs here reached a fully passing suite that way (a
+`sparse` compound index that rejected a user's second keyless order, a
+migration whose `$unset` mongoose silently emptied, and a conditional write
+whose filter threw a `CastError` and never executed). It covers the index
+constraints, the conditional order write including concurrent writers, and what
+the database does with non-finite money.
 
 `api.test.ts` (auth contract, revocation, token sources, CSRF, enumeration) ·
 `orders.test.ts` (validation matrix, market/limit placement, idempotency and
@@ -348,6 +368,12 @@ CSRF axios default.
 `render.yaml` deploys the backend as a Render web service (build `npm install &&
 npm run build`, start `npm run serve`, health check `/healthz`). The two React
 apps build to static sites.
+
+**Shutdown.** The process handles `SIGTERM`/`SIGINT`: background timers stop
+first so no new work begins, the HTTP server drains what is already running,
+then the database connection closes, with a 10-second cap so a deploy is never
+held open. SSE streams are ended explicitly — they are held open indefinitely
+by design, and an HTTP server will not finish closing while any remain.
 
 **Domain requirement.** The auth cookie is `sameSite: "lax"`. All three
 services must sit under one registrable domain (`www.` / `app.` / `api.`) or
@@ -490,6 +516,6 @@ Dashboard and frontend read `REACT_APP_API_URL`, `REACT_APP_LOGIN_URL`, and
 - **8** tradable pairs · **12h** JWT lifetime · **30s** staleness guard ·
   **30s** REST poll · **2s** SSE broadcast · **5s** order reconciliation ·
   **15min** snapshot sweep · **1%** market-order cross
-- **162** backend + **43** dashboard + **16** frontend tests
+- **206** backend + **46** dashboard + **16** frontend tests
 - **1** shared Gemini sandbox account · **1** market-data feed regardless of
   user count
