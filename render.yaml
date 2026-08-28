@@ -15,6 +15,22 @@
 #       (e.g. api.yoursite.com, app.yoursite.com, www.yoursite.com), or
 #   (b) change TOKEN_COOKIE.sameSite to "none" in backend/controllers/
 #       AuthController.ts (secure:true is already conditioned on NODE_ENV).
+#
+# IMPORTANT — this service must run as EXACTLY ONE instance. Four pieces of
+# state live in process memory, and a second instance breaks each one quietly,
+# with no error to tell you:
+#   backend/services/geminiPrivate.ts — the Gemini nonce counter. Two processes
+#     signing with the same API key interleave nonces and Gemini starts
+#     rejecting signed requests, which surfaces as failing orders.
+#   backend/middlewares/rateLimit.ts  — an in-memory store, so every limit
+#     multiplies by the instance count.
+#   backend/services/priceFeed.ts     — the price cache, so clients see
+#     different prices depending on which instance they reach.
+#   backend/services/sse.ts           — the SSE client registry and the per-IP
+#     socket cap, which is then enforced per instance rather than overall.
+# Scaling up is therefore not a configuration change. The nonce is the piece
+# that has to move first — to Redis INCR, or to a single-writer process.
+
 services:
   - type: web
     name: bluechip-backend

@@ -21,6 +21,10 @@ const TIMEFRAMES: { value: CandleTimeframe; label: string }[] = [
 ];
 
 
+/** Candles drawn at once — five days of hourly bars, which is what the chart
+ *  width can show without the wicks collapsing into each other. */
+const VISIBLE_CANDLES = 120;
+
 const MarketDetail = () => {
   const { symbol = "" } = useParams();
   const navigate = useNavigate();
@@ -34,7 +38,10 @@ const MarketDetail = () => {
   // Sliced once per candle change rather than on every render: a fresh array
   // here would defeat the memo on CandleChart, since the prop identity is what
   // it compares.
-  const visibleCandles = useMemo(() => candles.slice(-120), [candles]);
+  const visibleCandles = useMemo(
+    () => candles.slice(-VISIBLE_CANDLES),
+    [candles],
+  );
 
   const pair = symbol.toUpperCase();
   const info = symbols.find((s) => s.symbol === pair);

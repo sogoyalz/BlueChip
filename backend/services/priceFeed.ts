@@ -15,6 +15,8 @@ export interface PriceEntry {
   source: PriceSource;
 }
 
+// Per-process, so a second instance would serve its own prices from its own
+// feed. Single-instance only — see render.yaml.
 const cache = new Map<string, PriceEntry>();
 
 let timer: ReturnType<typeof setInterval> | null = null;

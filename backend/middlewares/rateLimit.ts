@@ -4,6 +4,8 @@
 // NOTE: index.ts must set app.set("trust proxy", 1) — Render sits behind a
 // proxy, and without it every visitor shares the proxy's IP bucket.
 
+// Single-instance only: this is the default in-memory store, so every limit
+// below multiplies by the number of running instances. See render.yaml.
 import rateLimit from "express-rate-limit";
 import { Request } from "express";
 

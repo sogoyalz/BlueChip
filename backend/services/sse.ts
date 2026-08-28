@@ -10,6 +10,8 @@
 import { Response } from "express";
 import { getAllPrices } from "./priceFeed";
 
+// Per-process: a second instance holds its own client set, and the per-IP cap
+// below is then enforced per instance rather than overall. See render.yaml.
 const clients = new Set<Response>();
 // Track how many streams each IP holds so one client can't exhaust sockets.
 const perIp = new Map<string, number>();
