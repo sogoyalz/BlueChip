@@ -101,8 +101,15 @@ const WatchListItem = ({
   info: SymbolInfo;
   tick?: TickerPrice;
 }) => {
-  const isDown = (tick?.changePct24h ?? 0) < 0;
-  const pct = tick ? `${tick.changePct24h >= 0 ? "+" : ""}${tick.changePct24h.toFixed(2)}%` : "—";
+  // Three states, not two. With no tick we do not know the direction, and
+  // `(undefined ?? 0) < 0` is false — which rendered a green up arrow beside
+  // the "—" placeholder, asserting a rise we have no data for.
+  const known =
+    tick !== undefined && Number.isFinite(tick.changePct24h);
+  const isDown = known && tick!.changePct24h < 0;
+  const pct = known
+    ? `${tick!.changePct24h >= 0 ? "+" : ""}${tick!.changePct24h.toFixed(2)}%`
+    : "—";
 
   return (
     <li>
@@ -112,12 +119,15 @@ const WatchListItem = ({
           <p className="symbol-name">{info.base}</p>
         </div>
         <div className="item-info">
-          <span className={`percent ${isDown ? "down" : "up"}`}>{pct}</span>
-          {isDown ? (
-            <KeyboardArrowDown className="down" />
-          ) : (
-            <KeyboardArrowUp className="up" />
-          )}
+          <span className={known ? `percent ${isDown ? "down" : "up"}` : "percent"}>
+            {pct}
+          </span>
+          {known &&
+            (isDown ? (
+              <KeyboardArrowDown className="down" />
+            ) : (
+              <KeyboardArrowUp className="up" />
+            ))}
           <span className="price">{tick ? price(tick.price) : "…"}</span>
         </div>
       </div>

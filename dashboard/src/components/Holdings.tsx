@@ -91,7 +91,14 @@ const Holdings = () => {
     };
   }, []);
 
-  const labels = holdings.map((h) => h.symbol);
+  // Only holdings we can actually value belong on a chart of values. Plotting
+  // an unpriced one as a zero-height bar says it is worth nothing, which is
+  // the same claim the table and the total stopped making.
+  const priced = holdings.filter(
+    (h): h is typeof h & { price: number } =>
+      typeof h.price === "number" && Number.isFinite(h.price)
+  );
+  const labels = priced.map((h) => h.symbol);
 
   // A holding with no price contributed 0 to this sum, quietly understating
   // the total. A total that is missing one of its parts is not a total, so say
@@ -109,7 +116,7 @@ const Holdings = () => {
     datasets: [
       {
         label: "Value (USD)",
-        data: holdings.map((h) => (h.price ?? 0) * h.qty),
+        data: priced.map((h) => h.price * h.qty),
         backgroundColor: "#e50914",
         borderRadius: 4,
         maxBarThickness: 28,

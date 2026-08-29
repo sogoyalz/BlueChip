@@ -16,7 +16,9 @@ vi.mock("react-toastify", () => ({
 
 // chart.js needs a real canvas; the graph isn't under test here.
 vi.mock("./VerticalGraph", () => ({
-  VerticalGraph: () => <div data-testid="vertical-graph" />,
+  VerticalGraph: ({ data }: { data: { labels: string[] } }) => (
+    <div data-testid="vertical-graph" data-labels={JSON.stringify(data.labels)} />
+  ),
 }));
 
 const mockedGet = axios.get as Mock;
@@ -136,6 +138,21 @@ describe("Holdings", () => {
       renderHoldings();
       await screen.findByText("DOGEUSD");
       expect(screen.queryByText("$300.00")).not.toBeInTheDocument();
+    });
+
+    test("the value chart omits an unpriced holding rather than plotting zero", async () => {
+      mockedGet.mockResolvedValue({
+        data: [
+          { symbol: "BTCUSD", qty: 2, price: 150, dayChangePct: 0 },
+          { symbol: "DOGEUSD", qty: 500, dayChangePct: 0 },
+        ],
+      });
+      renderHoldings();
+      await screen.findByText("DOGEUSD");
+      const plotted = JSON.parse(
+        screen.getByTestId("vertical-graph").getAttribute("data-labels") ?? "[]",
+      );
+      expect(plotted).toEqual(["BTCUSD"]);
     });
 
     test("a genuinely empty portfolio still reports zero, not unknown", async () => {

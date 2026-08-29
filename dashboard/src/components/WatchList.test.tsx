@@ -23,7 +23,7 @@ const prices = {
   ETHUSD: { price: 2500, changePct24h: -0.4, updatedAt: Date.now(), source: "ws" as const },
 };
 
-const renderWatchList = () =>
+const renderWatchList = (priceOverride: Record<string, unknown> = prices) =>
   render(
     <GeneralContext.Provider
       value={{
@@ -35,7 +35,9 @@ const renderWatchList = () =>
         notifyOrderPlaced: vi.fn(),
       }}
     >
-      <PricesContext.Provider value={{ prices, symbols, isStale: false }}>
+      <PricesContext.Provider
+        value={{ prices: priceOverride as typeof prices, symbols, isStale: false }}
+      >
         <WatchList />
       </PricesContext.Provider>
     </GeneralContext.Provider>
@@ -61,6 +63,19 @@ describe("WatchList trade actions", () => {
     const buy = screen.getAllByRole("button", { name: /^buy\b/i })[0];
     buy.focus();
     expect(document.activeElement).toBe(buy);
+  });
+
+  test("a symbol with no price shows no direction at all", () => {
+    // `(undefined ?? 0) < 0` is false, so a missing tick rendered the green
+    // "up" class and an up arrow beside the "—" placeholder — asserting a rise
+    // for a value we do not have.
+    renderWatchList({});
+
+    const pct = document.querySelector(".percent")!;
+    expect(pct).toHaveTextContent("—");
+    expect(pct).not.toHaveClass("up");
+    expect(pct).not.toHaveClass("down");
+    expect(document.querySelector(".item-info svg")).toBeNull();
   });
 
   test("every action button says which asset it acts on", () => {
