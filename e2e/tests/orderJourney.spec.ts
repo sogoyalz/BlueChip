@@ -119,6 +119,42 @@ test.describe("the order journey, end to end", () => {
   });
 });
 
+test.describe("the account menu", () => {
+  test("opens below the trigger without moving the page, and dismisses", async ({ page }) => {
+    // The dropdown was an in-flow flex child of the top bar, so opening it
+    // rendered the menu BESIDE the avatar and changed the bar's layout. It
+    // also had no way to close other than clicking the trigger again — no
+    // Escape, no outside click — which is a trap for a keyboard user.
+    const { username } = await signUp(page);
+
+    const bar = page.locator(".topbar-container");
+    const heightClosed = (await bar.boundingBox())!.height;
+
+    const trigger = page.getByRole("button", { name: new RegExp(username, "i") });
+    await trigger.click();
+    const menu = page.locator(".profile-dropdown");
+    await expect(menu).toBeVisible();
+
+    const heightOpen = (await bar.boundingBox())!.height;
+    expect(Math.round(heightOpen)).toBe(Math.round(heightClosed));
+
+    const tb = (await trigger.boundingBox())!;
+    const mb = (await menu.boundingBox())!;
+    expect(mb.y).toBeGreaterThan(tb.y + tb.height - 1);
+
+    // Escape closes it and hands focus back, rather than dropping the user at
+    // the top of the page.
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
+    await expect(trigger).toBeFocused();
+
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    await page.locator("main").click({ position: { x: 5, y: 5 } });
+    await expect(menu).toBeHidden();
+  });
+});
+
 test.describe("guards hold in a real browser", () => {
   test("the dashboard is not reachable without a session", async ({ page }) => {
     await page.goto(URLS.dashboard);

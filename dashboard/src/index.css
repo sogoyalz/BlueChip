@@ -431,11 +431,28 @@ input:focus-visible {
   color: var(--ink-2);
 }
 
+/* The trigger and its dropdown are one unit, so an outside click can be told
+   from an inside one. position:relative makes this the dropdown's containing
+   block. */
+.profile-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .profile-dropdown {
-  margin-top: 6px;
+  /* Floated, not in flow. As a flex child of .menus it used to sit BESIDE the
+     avatar and change the top bar's layout while open. */
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 140px;
   padding: 4px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: var(--surface);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 }
 
 .profile-dropdown .logout-btn {

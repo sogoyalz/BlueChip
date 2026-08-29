@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import { Link, useLocation } from "react-router-dom";
 import axios from "axios";
@@ -40,9 +40,38 @@ const Menu = () => {
     ? username.slice(0, 2).toUpperCase()
     : "BC";
 
+  const profileRef = useRef<HTMLDivElement>(null);
+
   const handleProfileClick = () => {
-    setIsProfileDropdownOpen(!isProfileDropdownOpen);
+    setIsProfileDropdownOpen((open) => !open);
   };
+
+  // A dropdown that only closes by clicking its own trigger again is a trap:
+  // clicking elsewhere leaves it hanging over the page, and Escape — the key
+  // every other dismissable surface in this app answers to — did nothing.
+  useEffect(() => {
+    if (!isProfileDropdownOpen) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setIsProfileDropdownOpen(false);
+      // Focus goes back to the trigger, not to wherever the page happens to
+      // start, so a keyboard user does not lose their place.
+      profileRef.current?.querySelector<HTMLButtonElement>(".profile")?.focus();
+    };
+    const onPointerDown = (e: MouseEvent) => {
+      if (!profileRef.current?.contains(e.target as Node)) {
+        setIsProfileDropdownOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [isProfileDropdownOpen]);
 
   const handleLogout = async () => {
     try {
@@ -63,7 +92,13 @@ const Menu = () => {
         <ul>
           {menuItems.map((item) => (
             <li key={item.to}>
-              <Link style={{ textDecoration: "none" }} to={item.to}>
+              <Link
+                style={{ textDecoration: "none" }}
+                to={item.to}
+                // The active item was distinguished by colour alone, so a
+                // screen-reader user had no way to tell where they were.
+                aria-current={location.pathname === item.to ? "page" : undefined}
+              >
                 <p
                   className={
                     location.pathname === item.to ? "menu selected" : "menu"
@@ -77,11 +112,15 @@ const Menu = () => {
         </ul>
         </nav>
         <hr />
+        <div className="profile-wrap" ref={profileRef}>
         <button
           type="button"
           className="profile"
           onClick={handleProfileClick}
-          aria-haspopup="menu"
+          // Deliberately not aria-haspopup="menu": that promises a menu with
+          // menuitem children and arrow-key navigation, and this is one button
+          // revealing one other button. aria-expanded alone describes it
+          // honestly.
           aria-expanded={isProfileDropdownOpen}
         >
           <div className="avatar">{initials}</div>
@@ -94,6 +133,7 @@ const Menu = () => {
             </button>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
