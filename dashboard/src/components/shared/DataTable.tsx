@@ -9,6 +9,12 @@ export interface Column<T> {
   label: string;
   render?: (row: T) => React.ReactNode;
   cellClass?: (row: T) => string | undefined;
+  /**
+   * Keep the header out of the visual design but still announce it. A column
+   * of buttons wants no visible heading, but an empty <th> is read out as a
+   * blank column header, which is worse than a quiet one.
+   */
+  labelHidden?: boolean;
 }
 
 interface DataTableProps<T> {
@@ -40,7 +46,11 @@ const DataTable = <T extends object>({
             // which column it belongs to, which on an orders grid turns the
             // table into an unlabelled stream of numbers.
             <th key={col.key} scope="col">
-              {col.label}
+              {col.labelHidden ? (
+                <span className="sr-only">{col.label}</span>
+              ) : (
+                col.label
+              )}
             </th>
           ))}
         </tr>

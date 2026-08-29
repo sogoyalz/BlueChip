@@ -160,7 +160,8 @@ const Orders = () => {
     },
     {
       key: "actions",
-      label: "",
+      label: "Actions",
+      labelHidden: true,
       // LIMIT as well as resting: a MARKET order is immediate-or-cancel and can
       // wear PARTIALLY_FILLED for the few seconds before orderSync resolves it,
       // but there is nothing on the book to cancel.

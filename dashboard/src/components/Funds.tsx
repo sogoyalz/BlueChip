@@ -41,7 +41,9 @@ const Funds = () => {
       </div>
 
       <div className="panel funds-note">
-        <h4>How funds work here</h4>
+        {/* h3, not h4: the stat cards above are h2, and a heading level
+            must not be skipped. */}
+        <h3>How funds work here</h3>
         <p>
           BlueChip trades for real against Gemini's sandbox exchange — real
           order matching, real fills, at real live prices, but with test

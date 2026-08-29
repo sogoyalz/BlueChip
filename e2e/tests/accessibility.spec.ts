@@ -26,9 +26,13 @@ async function signIn(page: Page) {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 }
 
+// best-practice is included deliberately alongside the WCAG tags. The rules
+// that catch a page with no <h1>, or headings that skip a level, live only in
+// that tag — filtering it out is how the market page kept an <h2> as its own
+// heading while every other route used <h1>, with the scan reporting clean.
 const scan = (page: Page) =>
   new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"])
     .analyze();
 
 /**
@@ -76,6 +80,33 @@ test.describe("accessibility", () => {
       expect(describeViolations(violations)).toBe("");
     });
   }
+
+  test("the market page has no violations", async ({ page }) => {
+    // The richest route in the app — candlestick chart, depth panel, timeframe
+    // tabs — and the one the watchlist's Chart button lands on. It was not
+    // covered until an h2-as-page-heading slipped through here.
+    await signIn(page);
+
+    const chart = page.getByRole("button", { name: /BTC chart/i });
+    await expect(chart).toBeVisible({ timeout: 20_000 });
+    const box = (await chart.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await chart.click();
+
+    await expect(page).toHaveURL(/\/market\/BTCUSD/);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+
+    // Park the pointer somewhere neutral first. Navigating by clicking leaves
+    // the mouse on the trigger, so MUI keeps its tooltip mounted in a
+    // body-level portal — outside every landmark, which the region rule then
+    // reports. That is a transient hover affordance, not page content, and
+    // scanning around it measures the page a reader actually gets.
+    await page.mouse.move(0, 0);
+    await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
+
+    const { violations } = await scan(page);
+    expect(describeViolations(violations)).toBe("");
+  });
 
   test("the order ticket has no violations while open", async ({ page }) => {
     await signIn(page);

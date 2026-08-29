@@ -37,7 +37,11 @@ const TopBar = () => {
   const streaming = Object.values(prices).some((p) => p.source === "ws");
 
   return (
-    <>
+    // <header> is the banner landmark. Without it the disclaimer, the live
+    // ticker and the logo sit outside every landmark, which means landmark
+    // navigation skips straight past them — the audit counted header: 0 and
+    // only nav/main/aside were added at the time.
+    <header>
       <div className="paper-banner" role="note">
         Paper trading with simulated funds — not real money. Market data via Gemini.
       </div>
@@ -63,7 +67,7 @@ const TopBar = () => {
 
         <Menu />
       </div>
-    </>
+    </header>
   );
 };
 

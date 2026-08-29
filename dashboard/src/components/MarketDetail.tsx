@@ -73,7 +73,7 @@ const MarketDetail = () => {
   if (symbols.length > 0 && !info) {
     return (
       <>
-        <h3 className="title">Unknown market “{pair}”</h3>
+        <h1 className="title">Unknown market “{pair}”</h1>
         <button className="btn btn-grey" onClick={() => navigate("/")}>
           Back to dashboard
         </button>
@@ -85,9 +85,11 @@ const MarketDetail = () => {
     <>
       <div className="dash-header">
         <div>
-          <h2 className="dash-title">
+          {/* h1, like every other route: this is the page's own heading, and
+              the market page is reachable directly from the watchlist. */}
+          <h1 className="dash-title">
             {info ? `${info.name} (${info.base}/USD)` : pair}
-          </h2>
+          </h1>
           <p className="dash-date">
             {tick ? (
               <>
