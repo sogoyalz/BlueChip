@@ -72,9 +72,7 @@ function Signup() {
           </ul>
         </aside>
 
-        {/* <main>: the form is the page's primary content. Without it the
-            card sits outside every landmark, and landmark navigation skips it. */}
-        <main className="auth-card">
+        <div className="auth-card">
           <h2>Create account</h2>
           <p className="auth-subtitle">Open a free account in a few seconds.</p>
 
@@ -133,7 +131,7 @@ function Signup() {
             Already have an account? <Link to="/login">Login</Link>
           </span>
           </form>
-        </main>
+        </div>
       </div>
       <ToastContainer position="top-right" autoClose={2500} />
     </div>

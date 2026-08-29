@@ -59,11 +59,16 @@ const describeViolations = (
     .join("\n");
 
 test.describe("accessibility", () => {
-  test("the landing page and login form have no violations", async ({ page }) => {
-    await page.goto("/login");
-    const { violations } = await scan(page);
-    expect(describeViolations(violations)).toBe("");
-  });
+  // Every public route, not one of them. This used to scan /login alone and
+  // report "the landing page" clean — six of the other seven routes had no
+  // <main> at all, and /pricing used brand red as text at 3.73:1.
+  for (const route of ["/", "/about", "/product", "/pricing", "/support", "/login", "/signup", "/nope"]) {
+    test(`the landing route ${route} has no violations`, async ({ page }) => {
+      await page.goto(route);
+      const { violations } = await scan(page);
+      expect(describeViolations(violations)).toBe("");
+    });
+  }
 
   test("the signed-in dashboard has no violations", async ({ page }) => {
     await signIn(page);
@@ -106,6 +111,46 @@ test.describe("accessibility", () => {
 
     const { violations } = await scan(page);
     expect(describeViolations(violations)).toBe("");
+  });
+
+  // Every scan above runs at the desktop viewport. The app's worst defect ever
+  // found was mobile-only — the trade actions rendered on hover, which a tap
+  // never fires — so the narrow viewport deserves its own pass rather than an
+  // assumption that it behaves the same.
+  test.describe("at a phone viewport", () => {
+    test.use({ viewport: { width: 375, height: 812 } });
+
+    test("the dashboard has no violations", async ({ page }) => {
+      await signIn(page);
+      const { violations } = await scan(page);
+      expect(describeViolations(violations)).toBe("");
+    });
+
+    test("the landing page has no violations", async ({ page }) => {
+      await page.goto("/");
+      const { violations } = await scan(page);
+      expect(describeViolations(violations)).toBe("");
+    });
+
+    test("nothing overflows the viewport horizontally", async ({ page }) => {
+      // A page wider than the screen means side-scrolling to read it, which is
+      // WCAG 1.4.10 reflow and is invisible at desktop width.
+      await signIn(page);
+      const overflow = await page.evaluate(() => ({
+        docWidth: document.documentElement.scrollWidth,
+        viewport: window.innerWidth,
+      }));
+      expect(overflow.docWidth).toBeLessThanOrEqual(overflow.viewport + 1);
+    });
+
+    test("the trade actions are reachable without hovering", async ({ page }) => {
+      // The original critical bug, pinned at the viewport it broke on.
+      await signIn(page);
+      await expect(page.getByRole("button", { name: /^Buy BTC$/ })).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByRole("button", { name: /^Sell BTC$/ })).toBeVisible();
+    });
   });
 
   test("the order ticket has no violations while open", async ({ page }) => {

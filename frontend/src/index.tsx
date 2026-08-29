@@ -19,6 +19,11 @@ const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement)
 root.render(
   <BrowserRouter>
   <Navbar/>
+  {/* One <main> for every route, here rather than in each page: content
+      outside a landmark is skipped by landmark navigation, and six of the
+      eight routes had no main at all. Login and Signup used to carry their
+      own — nesting two would break "exactly one main" just as surely. */}
+  <main>
   <Routes>
     <Route path ='/' element={<HomePage/>}/>
     <Route path ='/signup' element={<Signup/>}/>
@@ -29,6 +34,7 @@ root.render(
     <Route path='/login' element={<Login/>} />
     <Route path ='*' element={<NotFound/>} />
   </Routes>
+  </main>
   <Footer/>
   </BrowserRouter>
 );
