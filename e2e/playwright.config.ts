@@ -29,5 +29,13 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
+  // Chromium only, deliberately. The whole suite was run against WebKit
+  // (Safari's engine) as an experiment: 22 of 24 passed, and both failures
+  // were in assertions of mine that depend on hover and timing — the MUI
+  // tooltip portal on the market page, and a session check that passes in
+  // isolation. Neither was an application defect. Adding a second engine
+  // would mean either shipping those flakes or rewriting hover assertions to
+  // be engine-agnostic, for no bug found. Worth revisiting if Safari-specific
+  // behaviour is ever reported.
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });
