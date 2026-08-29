@@ -8,7 +8,9 @@
 // Everything here is display-only. Money arithmetic lives on the backend, in
 // integer cents.
 
-const NON_FINITE = "—";
+/** What every formatter renders when there is no number to show. Exported so
+ *  components can recognise the placeholder rather than re-typing the glyph. */
+export const NON_FINITE = "—";
 
 /** "1,234.56" — grouped and fixed to 2dp. Non-finite renders as an em dash. */
 export const num = (n: number | null | undefined, dp = 2): string =>
