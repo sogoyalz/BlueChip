@@ -30,6 +30,6 @@ logs/
 .vscode/
 .idea/
 
-# ---- Local editor / tooling config ----
-CLAUDE.md
-.claude/
+
+# mongodb-memory-server binaries (downloaded on demand)
+.mongodb-binaries/

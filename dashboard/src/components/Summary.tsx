@@ -4,18 +4,11 @@ import { toast } from "react-toastify";
 
 import PnLValue from "./shared/PnLValue";
 import StatCard from "./shared/StatCard";
-import { linePath } from "./shared/Sparkline";
+import { linePath } from "./shared/chartPath";
+import { usd, usdAbs, signedUsd, pct } from "./shared/format";
 import { Account, Holding } from "../types";
 import { API_URL } from "../config";
 
-const fmt$ = (n: number, dp = 2) =>
-  "$" +
-  Math.abs(n).toLocaleString("en-US", {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  });
-const signed$ = (n: number, dp = 2) => (n >= 0 ? "+" : "-") + fmt$(n, dp);
-const fmtPct = (p: number) => (p >= 0 ? "+" : "") + p.toFixed(2) + "%";
 
 const RANGES = ["1D", "1W", "1M", "ALL"] as const;
 
@@ -30,6 +23,9 @@ const CH = 260;
 
 const Summary = () => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  // null until the holdings call resolves — an empty array is a real "no
+  // positions", which is a different thing from "we don't know".
+  const [holdingsLoaded, setHoldingsLoaded] = useState(false);
   const [account, setAccount] = useState<Account | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
@@ -40,7 +36,10 @@ const Summary = () => {
     const opts = { withCredentials: true };
     axios
       .get<Holding[]>(`${API_URL}/api/holdings`, opts)
-      .then((res) => setHoldings(res.data))
+      .then((res) => {
+        setHoldings(res.data);
+        setHoldingsLoaded(true);
+      })
       .catch((err) => {
         console.error("Failed to load holdings summary:", err);
         // toastId dedupes so a retry / StrictMode double-mount can't stack
@@ -52,7 +51,10 @@ const Summary = () => {
     axios
       .get<Account>(`${API_URL}/api/account`, opts)
       .then((res) => setAccount(res.data))
-      .catch((err) => console.error("Failed to load account:", err));
+      .catch((err) => {
+        console.error("Failed to load account:", err);
+        toast.error("Could not load account.", { toastId: "account-error" });
+      });
   }, []);
 
   useEffect(() => {
@@ -68,19 +70,42 @@ const Summary = () => {
   const currentValue = holdings.reduce((sum, h) => sum + (h.price ?? 0) * h.qty, 0);
 
   // Today's move, approximated from each holding's 24h-change percentage.
+  // Cash doesn't move, so the dollar figure is holdings-only.
   const dayPL = holdings.reduce(
     (sum, h) => sum + (h.price ?? 0) * h.qty * ((h.dayChangePct ?? 0) / 100),
     0
   );
-  const dayPct = currentValue > 0 ? (dayPL / (currentValue - dayPL)) * 100 : 0;
 
   const balance = account?.balance ?? 0;
   const portfolioValue = account?.portfolioValue ?? currentValue + balance;
 
+  // When a load fails we genuinely do not know these figures. Rendering "$0"
+  // for an unknown balance is not a neutral placeholder in a trading app — it
+  // reads as "your portfolio is empty", which is alarming and false. Funds.tsx
+  // already shows "—" in exactly this situation; match it.
+  const money = (known: boolean, render: () => string) => (known ? render() : "—");
+  const accountKnown = account !== null;
+  // The day percentage needs BOTH sides: the move comes from holdings, the base
+  // it is measured against comes from the account. Unknown either way.
+  const deltaKnown = accountKnown && holdingsLoaded;
+
+  // The percentage is rendered as the delta on portfolio value (cash +
+  // holdings), so it has to be measured against that same base. Dividing by
+  // holdings alone overstates the move by the account's cash share.
+  const prevPortfolioValue = portfolioValue - dayPL;
+  const dayPct = prevPortfolioValue > 0 ? (dayPL / prevPortfolioValue) * 100 : 0;
+
   // Real snapshot history; a brand-new account renders a flat baseline.
+  // Returns null when there is nothing honest to draw.
   const chart = useMemo(() => {
     let series = history.map((p) => p.value);
     if (series.length < 2) {
+      // With no recorded history, the only thing we can draw is a flat line at
+      // the current value — which is only honest if we actually know it. When
+      // the account load failed, portfolioValue is a 0 fallback, and drawing
+      // that asserts a figure we never received, directly under stat cards
+      // that correctly read "—".
+      if (!accountKnown) return null;
       const v = series[0] ?? portfolioValue;
       series = [v, v];
     }
@@ -92,10 +117,29 @@ const Summary = () => {
       lx,
       ly,
       up: series[series.length - 1] >= series[0],
+      series,
     };
-  }, [history, portfolioValue]);
+  }, [history, portfolioValue, accountKnown]);
 
-  const stroke = chart.up ? "#00c853" : "#ff5252"; // --gain / --loss
+  // The chart is a bare <svg> of two paths: without this a screen reader is
+  // told there is a graphic and nothing about what it shows.
+  const chartDescription = useMemo(() => {
+    if (!chart) return "";
+    const { series } = chart;
+    const first = series[0];
+    const last = series[series.length - 1];
+    const change = last - first;
+    const direction = change > 0 ? "up" : change < 0 ? "down" : "flat";
+    const pctText =
+      first > 0 ? ` (${((Math.abs(change) / first) * 100).toFixed(2)}%)` : "";
+    return series.length < 2 || first === last
+      ? `Portfolio value over ${range}: flat at ${usd(last)}. Not enough history to plot a trend yet.`
+      : `Portfolio value over ${range}: ${usd(first)} to ${usd(last)}, ` +
+          `${direction} ${usd(Math.abs(change))}${pctText}. ` +
+          `Low ${usd(Math.min(...series))}, high ${usd(Math.max(...series))}.`;
+  }, [chart, range]);
+
+  const stroke = chart?.up ? "#00c853" : "#ff5252"; // --gain / --loss
 
   const dateStr = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -107,30 +151,38 @@ const Summary = () => {
     <>
       <div className="dash-header">
         <div>
-          <h2 className="dash-title">
+          <h1 className="dash-title">
             Hi, {account?.username ?? "trader"}!
-          </h2>
+          </h1>
           <p className="dash-date">{dateStr} · Crypto markets never close</p>
         </div>
       </div>
 
+      {holdingsLoaded && holdings.length === 0 && (
+        <p className="first-run" role="note">
+          Nothing held on the shared account yet — pick a coin from the
+          watchlist to place your first order. Orders execute for real on
+          Gemini's sandbox exchange with test funds.
+        </p>
+      )}
+
       <div className="row cols-4">
         <StatCard
           label="Portfolio value"
-          delta={<PnLValue text={fmtPct(dayPct)} />}
+          delta={<PnLValue text={money(deltaKnown, () => pct(dayPct))} />}
           sub="shared account: cash + holdings"
         >
-          {fmt$(portfolioValue, 0)}
+          {money(accountKnown, () => usdAbs(portfolioValue, 0))}
         </StatCard>
         <StatCard
           label="Today's P/L"
-          delta={<PnLValue text={fmtPct(dayPct)} showArrow />}
+          delta={<PnLValue text={money(deltaKnown, () => pct(dayPct))} showArrow />}
           sub="unrealized, 24h"
         >
-          {signed$(dayPL, 0)}
+          {money(holdingsLoaded, () => signedUsd(dayPL, 0))}
         </StatCard>
         <StatCard label="Buying power" sub="available cash">
-          {fmt$(balance, 0)}
+          {money(accountKnown, () => usdAbs(balance, 0))}
         </StatCard>
       </div>
 
@@ -138,9 +190,13 @@ const Summary = () => {
         <div className="chart-head">
           <div>
             <p className="chart-label">Portfolio value</p>
-            <h3 className="chart-value">{fmt$(portfolioValue)}</h3>
+            <h3 className="chart-value">
+              {money(accountKnown, () => usdAbs(portfolioValue))}
+            </h3>
             <p className="chart-delta">
-              <PnLValue text={`${signed$(dayPL)} (${fmtPct(dayPct)})`} />
+              <PnLValue
+                text={money(deltaKnown, () => `${signedUsd(dayPL)} (${pct(dayPct)})`)}
+              />
               <span className="today">today</span>
             </p>
           </div>
@@ -159,7 +215,17 @@ const Summary = () => {
           </div>
         </div>
         <div className="chart-body">
-          <svg viewBox={`0 0 ${CW} ${CH}`} preserveAspectRatio="none">
+          {chart === null ? (
+            <p className="chart-empty">
+              No portfolio history to show yet.
+            </p>
+          ) : (
+          <svg
+            viewBox={`0 0 ${CW} ${CH}`}
+            preserveAspectRatio="none"
+            role="img"
+            aria-label={chartDescription}
+          >
             <defs>
               <linearGradient id="pf-fill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={stroke} stopOpacity="0.25" />
@@ -180,6 +246,7 @@ const Summary = () => {
             />
             <circle cx={chart.lx} cy={chart.ly} r="4.5" fill={stroke} stroke="#131316" strokeWidth="2.5" />
           </svg>
+          )}
         </div>
       </div>
     </>

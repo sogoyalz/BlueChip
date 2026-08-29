@@ -105,3 +105,166 @@ describe("signed requests", () => {
     await expect(getGeminiBalances()).rejects.toThrow(/not configured/);
   });
 });
+
+describe("balances cache invalidation", () => {
+  const okJson = (body: unknown) => ({ ok: true, json: async () => body });
+  const balances = [{ currency: "USD", amount: "100", available: "100", availableForWithdrawal: "100" }];
+
+  test("serves a second read from cache when nothing invalidated it", async () => {
+    const mockFetch = jest.fn().mockResolvedValue(okJson(balances));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await getGeminiBalances();
+    await getGeminiBalances();
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("a fetch that was in flight when the cache was cleared does not repopulate it", async () => {
+    // Exactly the post-fill race: /v1/balances is already in flight when an
+    // order fills and clears the cache. Its result is pre-fill, so caching it
+    // would serve stale balances for the whole TTL right when they matter.
+    const resolvers: Array<(v: unknown) => void> = [];
+    const mockFetch = jest
+      .fn()
+      .mockImplementation(() => new Promise((resolve) => resolvers.push(resolve)));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances, clearBalancesCache } = require("../services/geminiPrivate");
+
+    const inFlight = getGeminiBalances();
+    clearBalancesCache(); // a fill landed mid-fetch
+    resolvers[0](okJson(balances));
+    await inFlight;
+
+    void getGeminiBalances();
+    expect(mockFetch).toHaveBeenCalledTimes(2); // went back to Gemini, not the cache
+  });
+});
+
+describe("request timeouts", () => {
+  test("every signed request carries an abort signal", async () => {
+    // fetch() has no default timeout. Without one, a hung connection holds the
+    // handler open forever — and for an order placement the caller cannot tell
+    // whether it reached the exchange.
+    const mockFetch = jest.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await getGeminiBalances();
+
+    const [, opts] = mockFetch.mock.calls[0];
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("retry policy", () => {
+  const okJson = (body: unknown) => ({ ok: true, json: async () => body });
+  const fail = (status: number) => ({ ok: false, status, json: async () => ({}) });
+  const balances = [
+    { currency: "USD", amount: "100", available: "100", availableForWithdrawal: "100" },
+  ];
+
+  test("a read retries once past a 5xx and succeeds", async () => {
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValueOnce(fail(503))
+      .mockResolvedValueOnce(okJson(balances));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await expect(getGeminiBalances()).resolves.toEqual(balances);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("a read retries once past a refused connection", async () => {
+    const mockFetch = jest
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(okJson([{ order_id: "1" }]));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiActiveOrders } = require("../services/geminiPrivate");
+    await expect(getGeminiActiveOrders()).resolves.toEqual([{ order_id: "1" }]);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("a read does NOT retry a timeout — the second attempt is not cheap", async () => {
+    // /v1/balances coalesces concurrent callers, so retrying an 8s timeout
+    // would hold every one of them for sixteen seconds.
+    const mockFetch = jest
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error("timed out"), { name: "TimeoutError" }),
+      );
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await expect(getGeminiBalances()).rejects.toThrow(/timed out/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("a read gives up after one retry rather than hammering", async () => {
+    const mockFetch = jest.fn().mockResolvedValue(fail(503));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await expect(getGeminiBalances()).rejects.toThrow(/responded 503/);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  test("a read does NOT retry a 4xx — it is a decision, not a blip", async () => {
+    const mockFetch = jest.fn().mockResolvedValue(fail(400));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await expect(getGeminiBalances()).rejects.toThrow(/responded 400/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("each attempt re-signs with a fresh nonce", async () => {
+    const mockFetch = jest
+      .fn()
+      .mockResolvedValueOnce(fail(503))
+      .mockResolvedValueOnce(okJson(balances));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await getGeminiBalances();
+
+    const nonceOf = (call: number) =>
+      JSON.parse(
+        Buffer.from(
+          mockFetch.mock.calls[call][1].headers["X-GEMINI-PAYLOAD"],
+          "base64",
+        ).toString(),
+      ).nonce;
+    // Gemini rejects a reused nonce, so a retry that replayed the first
+    // payload would fail for a second, more confusing reason.
+    expect(nonceOf(1)).toBeGreaterThan(nonceOf(0));
+    expect(mockFetch.mock.calls[1][1].headers["X-GEMINI-SIGNATURE"]).not.toBe(
+      mockFetch.mock.calls[0][1].headers["X-GEMINI-SIGNATURE"],
+    );
+  });
+
+  test("placing an order is NEVER retried — a repeat risks a second fill", async () => {
+    const mockFetch = jest.fn().mockResolvedValue(fail(503));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { placeGeminiOrder } = require("../services/geminiPrivate");
+    await expect(
+      placeGeminiOrder({ symbol: "btcusd", amount: "1", price: "100", side: "buy" }),
+    ).rejects.toThrow(/responded 503/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("cancelling an order is NEVER retried", async () => {
+    const mockFetch = jest.fn().mockResolvedValue(fail(503));
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { cancelGeminiOrder } = require("../services/geminiPrivate");
+    await expect(cancelGeminiOrder("123")).rejects.toThrow(/responded 503/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+});

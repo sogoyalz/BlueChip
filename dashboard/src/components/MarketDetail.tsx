@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "react-toastify";
@@ -11,6 +11,7 @@ import PnLValue from "./shared/PnLValue";
 import Skeleton from "./shared/Skeleton";
 import { Candle, CandleTimeframe } from "../types";
 import { API_URL } from "../config";
+import { usd } from "./shared/format";
 
 const TIMEFRAMES: { value: CandleTimeframe; label: string }[] = [
   { value: "15m", label: "15m" },
@@ -19,12 +20,10 @@ const TIMEFRAMES: { value: CandleTimeframe; label: string }[] = [
   { value: "1day", label: "1D" },
 ];
 
-const fmt$ = (n: number) =>
-  "$" +
-  n.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+
+/** Candles drawn at once — five days of hourly bars, which is what the chart
+ *  width can show without the wicks collapsing into each other. */
+const VISIBLE_CANDLES = 120;
 
 const MarketDetail = () => {
   const { symbol = "" } = useParams();
@@ -35,6 +34,14 @@ const MarketDetail = () => {
   const [timeframe, setTimeframe] = useState<CandleTimeframe>("1hr");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Sliced once per candle change rather than on every render: a fresh array
+  // here would defeat the memo on CandleChart, since the prop identity is what
+  // it compares.
+  const visibleCandles = useMemo(
+    () => candles.slice(-VISIBLE_CANDLES),
+    [candles],
+  );
 
   const pair = symbol.toUpperCase();
   const info = symbols.find((s) => s.symbol === pair);
@@ -84,7 +91,7 @@ const MarketDetail = () => {
           <p className="dash-date">
             {tick ? (
               <>
-                {fmt$(tick.price)}{" "}
+                {usd(tick.price)}{" "}
                 <PnLValue
                   text={`${tick.changePct24h >= 0 ? "+" : ""}${tick.changePct24h.toFixed(2)}% (24h)`}
                   showArrow
@@ -132,7 +139,7 @@ const MarketDetail = () => {
           {loading ? (
             <Skeleton label="Loading chart…" />
           ) : (
-            <CandleChart candles={candles.slice(-120)} />
+            <CandleChart candles={visibleCandles} label={info?.base ?? pair} />
           )}
         </div>
       </div>

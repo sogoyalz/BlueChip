@@ -9,26 +9,25 @@ import helmet from "helmet";
 
 import cookieParser from "cookie-parser";
 
-import { OrdersModel } from "./model/OrdersModel";
-import { UserModel } from "./model/UserModel";
 import authRoute from "./routes/AuthRoute";
 import marketRoute from "./routes/MarketRoute";
 import orderRoute from "./routes/OrderRoute";
 import portfolioRoute from "./routes/PortfolioRoute";
-import { verifyToken } from "./middlewares/AuthMiddleware";
-import { toCents, fromCents } from "./util/money";
-import { getPrice, startPolling } from "./services/priceFeed";
+import { startPolling } from "./services/priceFeed";
 import { startGeminiWs } from "./services/geminiWs";
 import { startOrderSync } from "./services/orderSync";
-import { getGeminiBalances } from "./services/geminiPrivate";
 import { startSnapshots } from "./services/snapshots";
 import { startSseBroadcast } from "./services/sse";
 import { authLimiter, generalLimiter } from "./middlewares/rateLimit";
+import accountRoute from "./routes/AccountRoute";
+import { migrate } from "./migrations";
+import { installShutdownHandlers } from "./lifecycle";
 import { requireCsrfHeader } from "./middlewares/csrf";
 import { isWsConnected } from "./services/geminiWs";
 import { SYMBOLS } from "./config/symbols";
 import { isFresh } from "./services/priceFeed";
 import { fetchSymbols } from "./services/gemini";
+import { log } from "./util/logger";
 import { validateSymbolsAgainstGemini } from "./config/symbols";
 
 // Last-resort safety nets. Several paths are fire-and-forget (void
@@ -70,9 +69,15 @@ app.use(
   })
 );
 
+// Trimmed: "a.com, b.com" is the natural way to write this in a dashboard env
+// var, and an untrimmed " b.com" matches no origin — a silent 401-everywhere
+// login failure in production rather than a visible misconfiguration.
 const corsOrigins = (
   process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001"
-).split(",");
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 app.use(
   cors({
@@ -102,57 +107,7 @@ app.use("/", authRoute); // mounts /signup, /login, /
 app.use("/", marketRoute); // mounts /api/symbols, /api/prices (public)
 app.use("/", orderRoute); // mounts /api/orders* (auth)
 app.use("/", portfolioRoute); // mounts /api/portfolio/history (auth)
-
-// The shared Gemini sandbox account's holdings — every logged-in user sees
-// the same balances, enriched with live prices from the shared cache.
-app.get("/api/holdings", verifyToken, async (_req, res) => {
-  try {
-    const balances = await getGeminiBalances();
-    const holdings = balances
-      .filter((b) => b.currency !== "USD" && Number(b.amount) > 0)
-      .map((b) => {
-        const symbol = `${b.currency}USD`;
-        const live = getPrice(symbol);
-        return {
-          symbol,
-          qty: Number(b.amount),
-          price: live?.price,
-          dayChangePct: live?.changePct24h,
-        };
-      });
-    res.json(holdings);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch holdings" });
-  }
-});
-
-app.get("/api/account", verifyToken, async (req, res) => {
-  try {
-    const user = req.user!;
-    const balances = await getGeminiBalances();
-    const usd = balances.find((b) => b.currency === "USD");
-    // Accumulate in integer cents so the portfolio total never drifts sub-cent
-    // across many holdings; convert back to dollars only for the response.
-    const balanceCents = toCents(Number(usd?.amount ?? 0));
-    let holdingsCents = 0;
-    for (const b of balances) {
-      if (b.currency === "USD") continue;
-      const live = getPrice(`${b.currency}USD`);
-      holdingsCents += toCents(Number(b.amount) * (live?.price ?? 0));
-    }
-    res.json({
-      username: user.username,
-      email: user.email,
-      balance: fromCents(balanceCents),
-      portfolioValue: fromCents(balanceCents + holdingsCents),
-      createdAt: user.createdAt,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch account" });
-  }
-});
+app.use("/", accountRoute); // mounts /api/holdings, /api/account (auth)
 
 // Health check — also the keep-alive ping target so the free-tier host
 // doesn't sleep (which would pause order syncing and snapshots).
@@ -171,22 +126,6 @@ app.get("/healthz", (_req, res) => {
 // DESTRUCTIVE: this drops collections. It must NOT run on every boot (the
 // free-tier host restarts constantly). It only runs when RUN_MIGRATIONS=true
 // is explicitly set for a deploy, then should be unset again.
-const migrate = async (): Promise<void> => {
-  await UserModel.updateMany(
-    {},
-    { $unset: { balance: "", realizedPnl: "" } }
-  );
-  await OrdersModel.updateMany({}, { $unset: { realizedPnl: "" } });
-  for (const collection of ["positions", "holdings", "holding"]) {
-    try {
-      await mongoose.connection.dropCollection(collection);
-      console.log(`migrate: dropped legacy ${collection} collection`);
-    } catch {
-      // collection already gone — nothing to do
-    }
-  }
-};
-
 const start = async (): Promise<void> => {
   try {
     if (!uri) {
@@ -196,6 +135,17 @@ const start = async (): Promise<void> => {
     // without a sufficiently long one rather than silently signing with it.
     if (!process.env.TOKEN_KEY || process.env.TOKEN_KEY.length < 32) {
       throw new Error("TOKEN_KEY is not set or is too short (need >= 32 chars)");
+    }
+    // Not fatal — the app runs correctly without it — but the orphaned-fill
+    // alert is the one signal that cannot be reconstructed after the fact, and
+    // on a host where nobody tails stdout it currently reaches no one. Say so
+    // once at boot rather than letting the silence pass for health.
+    if (process.env.NODE_ENV === "production" && !process.env.MONITORING_WEBHOOK_URL) {
+      log.warn("boot.no_alert_destination", {
+        detail:
+          "MONITORING_WEBHOOK_URL is unset — alerts stay on stdout only, so an " +
+          "orphaned fill will not reach anyone.",
+      });
     }
     await mongoose.connect(uri);
     console.log("db connected");
@@ -213,9 +163,10 @@ const start = async (): Promise<void> => {
     startOrderSync();
     startSnapshots();
     startSseBroadcast();
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
       console.log(`app started on port ${PORT}`);
     });
+    installShutdownHandlers(server);
   } catch (err) {
     console.error("Failed to connect to the database:", err);
     process.exit(1);
@@ -228,3 +179,4 @@ if (require.main === module) {
 }
 
 export { app };
+export { migrate } from "./migrations";

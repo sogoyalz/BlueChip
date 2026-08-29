@@ -18,6 +18,8 @@ interface DataTableProps<T> {
   loading?: boolean;
   loadingLabel?: string;
   emptyContent?: React.ReactNode;
+  /** Names the table for screen readers — a bare grid of numbers otherwise. */
+  label?: string;
 }
 
 const DataTable = <T extends object>({
@@ -27,13 +29,19 @@ const DataTable = <T extends object>({
   loading = false,
   loadingLabel = "Loading…",
   emptyContent = null,
+  label,
 }: DataTableProps<T>) => (
   <div className="order-table">
-    <table>
+    <table aria-label={label}>
       <thead>
         <tr>
           {columns.map((col) => (
-            <th key={col.key}>{col.label}</th>
+            // scope="col": without it a screen reader reading a cell cannot say
+            // which column it belongs to, which on an orders grid turns the
+            // table into an unlabelled stream of numbers.
+            <th key={col.key} scope="col">
+              {col.label}
+            </th>
           ))}
         </tr>
       </thead>

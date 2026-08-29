@@ -13,11 +13,9 @@ function ProductPage() {
       <LeftSection
         imageURL="/media/images/productTerminal.svg"
         productName="Terminal"
-        productDescription="The live trading dashboard: streaming crypto prices, a watchlist of major coins, market and limit orders, and honest P&L on every position — all in an elegant dark UI that works wherever your browser does."
+        productDescription="The live trading dashboard: streaming crypto prices, a watchlist of major coins, market and limit orders, and honest P&L on every position — all in an elegant dark UI that runs wherever your browser does."
         tryDemo="/signup"
         learnMore="/support"
-        googlePlay="/signup"
-        appStore="/signup"
       />
       <RightSection
         imageURL="/media/images/productReports.svg"
@@ -27,17 +25,15 @@ function ProductPage() {
       />
       <LeftSection
         imageURL="/media/images/productVault.svg"
-        productName="Vault"
-        productDescription="Your holdings, accounted for properly: quantities to eight decimal places, weighted-average cost on every buy, and live valuation against the current market — the same bookkeeping a real exchange runs."
+        productName="Holdings"
+        productDescription="Positions accounted for properly: quantities to eight decimal places, live valuation against the current market, and the shared sandbox balance behind them — the same bookkeeping a real exchange runs."
         tryDemo="/signup"
         learnMore="/support"
-        googlePlay="/signup"
-        appStore="/signup"
       />
       <RightSection
         imageURL="/media/images/productApi.svg"
         productName="BlueChip API"
-        productDescription="Open market-data endpoints, no key required: live prices, the supported symbol list, and OHLC candle history over simple HTTP/JSON — the same data that powers the Terminal."
+        productDescription="Open market-data endpoints, no key and no account required: live prices, the supported symbol list, and OHLC candle history over plain HTTP/JSON — the same feed that powers the Terminal."
         learnMore="/support"
       />
       <p className="text-center mb-5">

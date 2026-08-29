@@ -1,6 +1,12 @@
 import { Schema } from "mongoose";
 import bcrypt from "bcrypt";
 
+// bcrypt work factor for stored passwords. Exported because the login path
+// hashes a dummy password at the SAME cost to keep "no such user" and "wrong
+// password" indistinguishable by timing — if this number changes and that one
+// doesn't, the two paths diverge and the timing channel silently reopens.
+export const BCRYPT_COST = 12;
+
 export interface IUser {
   email: string;
   username: string;
@@ -24,14 +30,14 @@ export const UserSchema = new Schema<IUser>({
 
 // Runs automatically RIGHT BEFORE a user is saved.
 // Only hashes when the password itself changed — otherwise any later
-// save() (e.g. after mutating balance) would hash the hash and
+// save() (e.g. after bumping tokenVersion) would hash the hash and
 // permanently lock the user out.
 export async function hashPasswordHook(this: {
   isModified(path: string): boolean;
   password: string;
 }): Promise<void> {
   if (!this.isModified("password")) return;
-  this.password = await bcrypt.hash(this.password, 12);
+  this.password = await bcrypt.hash(this.password, BCRYPT_COST);
 }
 
 UserSchema.pre("save", hashPasswordHook);

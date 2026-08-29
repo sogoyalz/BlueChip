@@ -1,17 +1,16 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "react-toastify";
 
 import DataTable, { Column } from "./shared/DataTable";
 import EmptyState from "./shared/EmptyState";
-import { Order, OrderStatus } from "../types";
+import ConfirmDialog from "./shared/ConfirmDialog";
+import GeneralContext from "./GeneralContext";
+import { Order, OrderStatus, isResting } from "../types";
 import { API_URL } from "../config";
+import { num } from "./shared/format";
 
-const fmt = (n: number | undefined) =>
-  typeof n === "number" && !isNaN(n)
-    ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : "—";
 
 const STATUS_CLASS: Record<OrderStatus, string> = {
   FILLED: "filled",
@@ -35,12 +34,21 @@ const Orders = () => {
       .then((res) => setAllOrders(res.data))
       .catch((err) => {
         console.error("Failed to load orders:", err);
-        if (showSpinner) toast.error("Could not load orders.");
+        if (showSpinner) {
+          toast.error("Could not load orders.", { toastId: "orders-error" });
+        }
       })
       .finally(() => {
         if (showSpinner) setLoading(false);
       });
   }, []);
+
+  // Refetch as soon as an order is accepted, rather than waiting up to 10s for
+  // the next poll and leaving the user wondering where it went.
+  const { orderVersion } = useContext(GeneralContext);
+  useEffect(() => {
+    if (orderVersion > 0) fetchOrders(false);
+  }, [orderVersion, fetchOrders]);
 
   useEffect(() => {
     // Auth rides the httpOnly cookie; this component only mounts once the
@@ -51,19 +59,35 @@ const Orders = () => {
     return () => clearInterval(timer);
   }, [fetchOrders]);
 
+  // The order awaiting confirmation, and the one currently being cancelled.
+  // Separate, because the dialog stays open and disabled while in flight.
+  const [pendingCancel, setPendingCancel] = useState<Order | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+
   const handleCancel = async (order: Order) => {
+    setCancelling(true);
     try {
-      await axios.post(
+      const { data } = await axios.post<{ order: Order }>(
         `${API_URL}/api/orders/${order._id}/cancel`,
         {},
         { withCredentials: true }
       );
-      toast.success(`Cancelled ${order.symbol} limit order`);
+      // The exchange is the source of truth: an order can fill in the moment
+      // before the cancel lands, and the route returns 200 saying so. Reporting
+      // that as "Cancelled" would tell the user the opposite of what happened.
+      if (data.order?.status === "FILLED") {
+        toast.info(`${order.symbol} filled before the cancel reached the exchange`);
+      } else {
+        toast.success(`Cancelled ${order.symbol} limit order`);
+      }
     } catch (err) {
       const message = axios.isAxiosError(err)
         ? err.response?.data?.message
         : undefined;
       toast.error(message || "Could not cancel order.");
+    } finally {
+      setCancelling(false);
+      setPendingCancel(null);
     }
     fetchOrders(false);
   };
@@ -80,16 +104,36 @@ const Orders = () => {
         </span>
       ),
     },
-    { key: "qty", label: "Qty." },
+    {
+      key: "qty",
+      label: "Qty.",
+      // Keyed off what actually executed rather than the status label: an order
+      // can carry a partial fill under PARTIALLY_FILLED, under CANCELLED (the
+      // cancel landed after part of it traded), or under OPEN (a resting limit
+      // that partly crossed). In every one of those the requested amount alone
+      // hides a real trade.
+      render: (o) =>
+        o.status !== "FILLED" &&
+        typeof o.filledQty === "number" &&
+        o.filledQty < o.qty
+          ? `${o.filledQty} / ${o.qty}`
+          : o.qty,
+    },
     {
       key: "price",
       label: "Price",
-      render: (o) =>
-        o.status === "FILLED"
-          ? fmt(o.fillPrice)
-          : o.type === "LIMIT"
-            ? `${fmt(o.limitPrice)} (limit)`
-            : "—",
+      render: (o) => {
+        // Only an untouched resting order shows its own price. The moment any
+        // of it trades, the traded price is the fact — showing the limit price
+        // for a partially-filled order would say nothing executed, which is
+        // false. The qty column carries the resting remainder.
+        if (o.status === "OPEN") {
+          return o.type === "LIMIT" ? `${num(o.limitPrice)} (limit)` : "—";
+        }
+        // Otherwise, if any of it traded, the price it traded at is the fact.
+        if (typeof o.fillPrice === "number") return num(o.fillPrice);
+        return o.type === "LIMIT" ? `${num(o.limitPrice)} (limit)` : "—";
+      },
     },
     {
       key: "status",
@@ -117,24 +161,32 @@ const Orders = () => {
     {
       key: "actions",
       label: "",
+      // LIMIT as well as resting: a MARKET order is immediate-or-cancel and can
+      // wear PARTIALLY_FILLED for the few seconds before orderSync resolves it,
+      // but there is nothing on the book to cancel.
       render: (o) =>
-        o.status === "OPEN" ? (
-          <button className="btn btn-grey btn-small" onClick={() => handleCancel(o)}>
+        isResting(o.status) && o.type === "LIMIT" ? (
+          <button
+            className="btn btn-grey btn-small"
+            aria-label={`Cancel ${o.side.toLowerCase()} order for ${o.qty} ${o.symbol}`}
+            onClick={() => setPendingCancel(o)}
+          >
             Cancel
           </button>
         ) : null,
     },
   ];
 
-  const openCount = allOrders.filter((o) => o.status === "OPEN").length;
+  const openCount = allOrders.filter((o) => isResting(o.status)).length;
 
   return (
     <>
-      <h3 className="title">
+      <h1 className="title">
         Orders ({allOrders.length}){openCount > 0 && ` · ${openCount} open`}
-      </h3>
+      </h1>
 
       <DataTable
+        label="Your orders"
         columns={columns}
         rows={allOrders}
         rowKey={(o) => o._id}
@@ -148,6 +200,31 @@ const Orders = () => {
           />
         }
       />
+
+      {pendingCancel && (
+        <ConfirmDialog
+          title="Cancel this order?"
+          destructive
+          pending={cancelling}
+          confirmLabel="Cancel order"
+          pendingLabel="Cancelling…"
+          cancelLabel="Keep it"
+          body={
+            <>
+              This cannot be undone. The order is resting on the exchange and may
+              still fill before the cancellation reaches it.
+              <span className="confirm-detail">
+                {pendingCancel.side} {pendingCancel.qty} {pendingCancel.symbol}
+                {typeof pendingCancel.limitPrice === "number"
+                  ? ` at ${num(pendingCancel.limitPrice)}`
+                  : ""}
+              </span>
+            </>
+          }
+          onConfirm={() => handleCancel(pendingCancel)}
+          onDismiss={() => setPendingCancel(null)}
+        />
+      )}
     </>
   );
 };

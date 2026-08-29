@@ -18,7 +18,7 @@ import {
 } from "../services/sse";
 import { setPrice, clearCache } from "../services/priceFeed";
 
-const fakeRes = () => ({ write: jest.fn() }) as unknown as Response;
+const fakeRes = () => ({ write: jest.fn(), end: jest.fn() }) as unknown as Response;
 
 afterEach(() => {
   stopSseBroadcast(); // also clears the client set
@@ -127,3 +127,35 @@ describe("broadcastPrices", () => {
     expect(addClient(fakeRes(), "7.7.7.7")).toBe(true);
   });
 });
+
+describe("shutdown", () => {
+  test("ends every open stream, so the HTTP server can actually close", async () => {
+    // SSE connections are held open indefinitely by design. Dropping them from
+    // the registry without ending the response leaves the sockets alive, and
+    // server.close() waits for open connections — so a SIGTERM on deploy would
+    // hang until the platform force-kills the process mid-flight.
+    const a = fakeRes();
+    const b = fakeRes();
+    addClient(a, "1.1.1.1");
+    addClient(b, "2.2.2.2");
+    expect(clientCount()).toBe(2);
+
+    stopSseBroadcast();
+
+    expect((a as unknown as { end: jest.Mock }).end).toHaveBeenCalled();
+    expect((b as unknown as { end: jest.Mock }).end).toHaveBeenCalled();
+    expect(clientCount()).toBe(0);
+  });
+
+  test("a client whose socket is already gone does not break the shutdown", () => {
+    const ok = fakeRes();
+    const broken = { write: jest.fn(), end: jest.fn(() => { throw new Error("socket gone"); }) } as unknown as Response;
+    addClient(broken, "3.3.3.3");
+    addClient(ok, "4.4.4.4");
+
+    expect(() => stopSseBroadcast()).not.toThrow();
+    expect((ok as unknown as { end: jest.Mock }).end).toHaveBeenCalled();
+    expect(clientCount()).toBe(0);
+  });
+});
+

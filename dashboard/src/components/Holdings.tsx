@@ -9,25 +9,14 @@ import PnLValue from "./shared/PnLValue";
 import StatCard from "./shared/StatCard";
 import { Holding } from "../types";
 import { API_URL } from "../config";
+import { num, usd } from "./shared/format";
 
-// Safe number formatter — a malformed row (null price) won't blank the page.
-const fmt = (n: number | undefined) =>
-  typeof n === "number" && !isNaN(n) ? n.toFixed(2) : "—";
-
-const fmt$ = (n: number) =>
-  typeof n === "number" && !isNaN(n)
-    ? "$" +
-      n.toLocaleString("en-US", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })
-    : "—";
 
 const columns: Column<Holding>[] = [
   { key: "symbol", label: "Asset" },
   { key: "qty", label: "Qty." },
-  { key: "price", label: "Price", render: (h) => fmt(h.price) },
-  { key: "curVal", label: "Cur. val", render: (h) => fmt((h.price ?? 0) * h.qty) },
+  { key: "price", label: "Price", render: (h) => num(h.price) },
+  { key: "curVal", label: "Cur. val", render: (h) => num((h.price ?? 0) * h.qty) },
   {
     key: "day",
     label: "24h chg.",
@@ -45,6 +34,11 @@ const columns: Column<Holding>[] = [
 
 const Holdings = () => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  // Whether we have ever actually received holdings. An empty array is a real
+  // "no positions"; a failed request is "we don't know", and in a trading UI
+  // those must not render as the same thing. Sticky once true, so a failed
+  // background refresh doesn't blank a page that already has good data.
+  const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,11 +52,16 @@ const Holdings = () => {
           withCredentials: true,
         })
         .then((res) => {
-          if (!cancelled) setHoldings(res.data);
+          if (!cancelled) {
+            setHoldings(res.data);
+            setLoaded(true);
+          }
         })
         .catch((err) => {
           console.error("Failed to load holdings:", err);
-          if (showSpinner) toast.error("Could not load holdings.");
+          if (showSpinner) {
+            toast.error("Could not load holdings.", { toastId: "holdings-error" });
+          }
         })
         .finally(() => {
           if (showSpinner && !cancelled) setLoading(false);
@@ -99,21 +98,28 @@ const Holdings = () => {
 
   return (
     <>
-      <h3 className="title">Holdings ({holdings.length})</h3>
+      <h1 className="title">Holdings{loaded ? ` (${holdings.length})` : ""}</h1>
 
       <DataTable
+        label="Your holdings"
         columns={columns}
         rows={holdings}
         rowKey={(h) => h.symbol}
         loading={loading}
         loadingLabel="Loading holdings…"
         emptyContent={
-          <EmptyState message="No holdings yet. Buy the first crypto from the watchlist." />
+          loaded ? (
+            <EmptyState message="No holdings yet. Buy the first crypto from the watchlist." />
+          ) : (
+            <EmptyState message="Couldn't load holdings. Retrying…" />
+          )
         }
       />
 
       <div className="row">
-        <StatCard label="Current value">{fmt$(totalCurrent)}</StatCard>
+        <StatCard label="Current value">
+          {loaded ? usd(totalCurrent) : "—"}
+        </StatCard>
       </div>
       <div className="panel chart-panel">
         <VerticalGraph data={data} />

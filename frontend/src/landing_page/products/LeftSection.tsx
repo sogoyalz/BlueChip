@@ -7,8 +7,6 @@ interface LeftSectionProps {
   productDescription: string;
   tryDemo: string;
   learnMore: string;
-  googlePlay: string;
-  appStore: string;
 }
 
 function LeftSection({
@@ -17,8 +15,6 @@ function LeftSection({
   productDescription,
   tryDemo,
   learnMore,
-  googlePlay,
-  appStore,
 }: LeftSectionProps) {
   return (
     <div className="container section">
@@ -31,26 +27,12 @@ function LeftSection({
         <div className="col-md-6 ps-md-5">
           <h2 className="section-title mb-3">{productName}</h2>
           <p className="section-lede mb-4">{productDescription}</p>
-          <div className="d-flex gap-4 flex-wrap mb-4">
+          <div className="d-flex gap-4 flex-wrap">
             <Link className="link-arrow" to={tryDemo}>
-              Try Demo
+              Open it
             </Link>
             <Link className="link-arrow" to={learnMore}>
-              Learn More
-            </Link>
-          </div>
-          <div className="badge-row">
-            <Link to={googlePlay}>
-              <img
-                src="/media/images/googlePlayBadge.svg"
-                alt="Get it on Google Play"
-              />
-            </Link>
-            <Link to={appStore}>
-              <img
-                src="/media/images/appstoreBadge.svg"
-                alt="Download on the App Store"
-              />
+              How it works
             </Link>
           </div>
         </div>

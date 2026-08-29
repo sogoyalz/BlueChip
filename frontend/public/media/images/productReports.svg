@@ -11,5 +11,5 @@
   <path d="M380 98 A62 62 0 0 1 435 190" fill="none" stroke="#e50914" stroke-width="18"/>
   <path d="M435 190 A62 62 0 0 1 352 215" fill="none" stroke="#00c853" stroke-width="18"/>
   <text x="380" y="166" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#f5f5f5" text-anchor="middle">68%</text>
-  <text x="44" y="310" font-family="Inter, sans-serif" font-size="12" fill="#a0a0a0">P&amp;L, taxes and holdings — in one view</text>
+  <text x="44" y="310" font-family="Inter, sans-serif" font-size="12" fill="#a0a0a0">Portfolio value, recorded after every fill</text>
 </svg>

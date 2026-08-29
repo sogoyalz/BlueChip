@@ -33,7 +33,14 @@ async function portfolioValue(): Promise<{ valueCents: number; cashCents: number
   return { cashCents, valueCents: cashCents + holdingsCents };
 }
 
-/** Snapshot the shared account now (fire-and-forget safe: never throws). */
+/**
+ * Snapshot the shared account now (fire-and-forget safe: never throws).
+ *
+ * If any balance or price is not a finite number, portfolioValue() throws and
+ * nothing is written. That is deliberate: a portfolio value we know to be
+ * wrong is worse than a gap in the series, and a non-finite one would corrupt
+ * the chart for good.
+ */
 export async function snapshotNow(): Promise<void> {
   try {
     const { cashCents, valueCents } = await portfolioValue();

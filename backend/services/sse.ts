@@ -10,6 +10,8 @@
 import { Response } from "express";
 import { getAllPrices } from "./priceFeed";
 
+// Per-process: a second instance holds its own client set, and the per-IP cap
+// below is then enforced per instance rather than overall. See render.yaml.
 const clients = new Set<Response>();
 // Track how many streams each IP holds so one client can't exhaust sockets.
 const perIp = new Map<string, number>();
@@ -105,6 +107,17 @@ export function stopSseBroadcast(): void {
   timer = null;
   if (keepAliveTimer) clearInterval(keepAliveTimer);
   keepAliveTimer = null;
+  // End the responses, don't just forget them. These connections are held open
+  // indefinitely by design, and an HTTP server will not finish closing while
+  // any are still alive — so on a SIGTERM the process would hang until the
+  // platform force-killed it, mid-flight.
+  for (const res of clients) {
+    try {
+      res.end();
+    } catch {
+      // socket already gone — nothing to close
+    }
+  }
   clients.clear();
   perIp.clear();
 }

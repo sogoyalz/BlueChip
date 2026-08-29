@@ -6,33 +6,37 @@ import { toast } from "react-toastify";
 import BuySellModal from "./BuySellModal";
 import GeneralContext from "../GeneralContext";
 import PricesContext from "../PricesContext";
+import type { Mock } from "vitest";
 
-jest.mock("axios", () => ({
+vi.mock("axios", () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn(), isAxiosError: jest.fn() },
+  default: { get: vi.fn(), post: vi.fn(), isAxiosError: vi.fn() },
 }));
 
-jest.mock("react-toastify", () => ({
-  toast: { error: jest.fn(), success: jest.fn(), info: jest.fn() },
+vi.mock("react-toastify", () => ({
+  toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 }));
 
-const mockedGet = axios.get as jest.Mock;
-const mockedPost = axios.post as jest.Mock;
-const mockedIsAxiosError = axios.isAxiosError as unknown as jest.Mock;
-const mockedToastError = toast.error as jest.Mock;
-const mockedToastSuccess = toast.success as jest.Mock;
-const mockedToastInfo = toast.info as jest.Mock;
+const mockedGet = axios.get as Mock;
+const mockedPost = axios.post as Mock;
+const mockedIsAxiosError = axios.isAxiosError as unknown as Mock;
+const mockedToastError = toast.error as Mock;
+const mockedToastSuccess = toast.success as Mock;
+const mockedToastInfo = toast.info as Mock;
 
-const closeTradeWindow = jest.fn();
+const closeTradeWindow = vi.fn();
+const notifyOrderPlaced = vi.fn();
 
 const renderModal = () =>
   render(
     <GeneralContext.Provider
       value={{
-        openTradeWindow: jest.fn(),
+        openTradeWindow: vi.fn(),
         closeTradeWindow,
-        openBuyWindow: jest.fn(),
-        closeBuyWindow: jest.fn(),
+        openBuyWindow: vi.fn(),
+        closeBuyWindow: vi.fn(),
+        orderVersion: 0,
+        notifyOrderPlaced,
       }}
     >
       <PricesContext.Provider
@@ -58,7 +62,7 @@ const enterLimitPrice = (value: string) => {
 const clickBuy = () => fireEvent.click(screen.getByRole("button", { name: /^buy$/i }));
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockedGet.mockResolvedValue({ data: { balance: 100000 } });
   mockedIsAxiosError.mockReturnValue(false);
 });
@@ -86,6 +90,32 @@ describe("BuySellModal client-side validation", () => {
 });
 
 describe("BuySellModal submit outcomes", () => {
+  test.each([
+    ["FILLED", { status: "FILLED", qty: 0.1, fillPrice: 50000 }],
+    ["OPEN", { status: "OPEN", qty: 0.1, limitPrice: 45000 }],
+    ["PARTIALLY_FILLED", { status: "PARTIALLY_FILLED", qty: 1, filledQty: 0.4, fillPrice: 50000 }],
+    ["REJECTED", { status: "REJECTED", reason: "Order did not fill" }],
+  ])("a %s response tells the orders list to refetch", async (_label, order) => {
+    // Whatever the outcome, the server has recorded it. Without this the new
+    // order was invisible until the next 10s poll and looked like it vanished.
+    mockedPost.mockResolvedValue({ data: { order } });
+    renderModal();
+    await screen.findByText(/Cash/);
+    enterQty("0.1");
+    clickBuy();
+    await waitFor(() => expect(notifyOrderPlaced).toHaveBeenCalledTimes(1));
+  });
+
+  test("a failed submission does NOT tell the list to refetch", async () => {
+    mockedPost.mockRejectedValue(new Error("Network Error"));
+    renderModal();
+    await screen.findByText(/Cash/);
+    enterQty("0.1");
+    clickBuy();
+    await waitFor(() => expect(mockedToastError).toHaveBeenCalled());
+    expect(notifyOrderPlaced).not.toHaveBeenCalled();
+  });
+
   test("a FILLED response shows a success toast and closes the window", async () => {
     mockedPost.mockResolvedValue({
       data: { order: { status: "FILLED", qty: 0.1, fillPrice: 50000 } },
@@ -112,6 +142,25 @@ describe("BuySellModal submit outcomes", () => {
     clickBuy();
     await waitFor(() => expect(closeTradeWindow).toHaveBeenCalled());
     expect(mockedToastInfo).toHaveBeenCalledWith(expect.stringContaining("Limit buy placed"));
+  });
+
+  test("a PARTIALLY_FILLED response is reported as a fill, not a rejection", async () => {
+    // A market order is immediate-or-cancel, so a partial fill is the final
+    // outcome — the user really did buy 0.4 BTC and must not be told otherwise.
+    mockedPost.mockResolvedValue({
+      data: {
+        order: { status: "PARTIALLY_FILLED", qty: 1, filledQty: 0.4, fillPrice: 50000 },
+      },
+    });
+    renderModal();
+    await screen.findByText(/Cash/);
+    enterQty("1");
+    clickBuy();
+    await waitFor(() => expect(closeTradeWindow).toHaveBeenCalled());
+    expect(mockedToastSuccess).toHaveBeenCalledWith(
+      expect.stringContaining("Bought 0.4 of 1 BTC")
+    );
+    expect(mockedToastError).not.toHaveBeenCalled();
   });
 
   test("a REJECTED response shows the server's reason and keeps the window open", async () => {
@@ -182,5 +231,68 @@ describe("BuySellModal idempotency key", () => {
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(3));
     const thirdKey = mockedPost.mock.calls[2][1].clientOrderId;
     expect(thirdKey).not.toBe(firstKey); // new order after success gets a fresh key
+  });
+
+  test("editing the order after a failure issues a new clientOrderId", async () => {
+    // The key exists to dedupe a retry of the SAME order. Once the user
+    // changes the quantity it's a different order — reusing the key would make
+    // the server return the previous one and silently drop the edit.
+    mockedPost.mockRejectedValueOnce(new Error("Network Error"));
+    mockedPost.mockResolvedValueOnce({
+      data: { order: { status: "FILLED", qty: 0.5, fillPrice: 50000 } },
+    });
+    renderModal();
+    await screen.findByText(/Cash/);
+    enterQty("0.1");
+
+    clickBuy();
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(1));
+    const firstKey = mockedPost.mock.calls[0][1].clientOrderId;
+    await screen.findByRole("button", { name: /^buy$/i });
+
+    enterQty("0.5"); // different order now
+    clickBuy();
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2));
+    expect(mockedPost.mock.calls[1][1].qty).toBe(0.5);
+    expect(mockedPost.mock.calls[1][1].clientOrderId).not.toBe(firstKey);
+  });
+});
+
+describe("BuySellModal keyboard access", () => {
+  // The ticket is the app's most important interactive surface; before this it
+  // announced role="dialog" but let Tab wander into the page behind it and
+  // ignored Escape entirely.
+  test("announces itself as a modal dialog", () => {
+    renderModal();
+    const dialog = screen.getByRole("dialog", { name: /buy BTCUSD/i });
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+  });
+
+  test("focus starts inside the ticket, not on the page behind it", () => {
+    renderModal();
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
+  test("Tab cycles within the ticket instead of escaping to the page", () => {
+    renderModal();
+    const dialog = screen.getByRole("dialog");
+    const cancel = screen.getByRole("button", { name: /cancel/i });
+    cancel.focus();
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(cancel);
+  });
+
+  test("Escape closes it, the same as Cancel", () => {
+    renderModal();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(closeTradeWindow).toHaveBeenCalledTimes(1);
+  });
+
+  test("the read-only market price stays out of the tab order", () => {
+    renderModal();
+    const price = screen.getByDisplayValue("$50,000.00");
+    expect(price).toHaveAttribute("tabindex", "-1");
   });
 });

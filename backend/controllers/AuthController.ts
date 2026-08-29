@@ -1,31 +1,66 @@
 import { Request, Response, CookieOptions } from "express";
 import bcrypt from "bcrypt";
+import jwt, { JwtPayload } from "jsonwebtoken";
 import { UserModel } from "../model/UserModel";
+import { BCRYPT_COST } from "../schemas/UserSchema";
 import { createSecretToken } from "../util/SecretToken";
+import { extractToken } from "../middlewares/AuthMiddleware";
+import { log } from "../util/logger";
 
 // Shared cookie options for the auth token. httpOnly so an XSS can't read it,
 // secure in production (HTTPS only). Logout clears the cookie with the SAME
 // options — the browser only removes it when the attributes match.
 //
-// In production the dashboard is a DIFFERENT origin from this API, so the
-// cookie must be sameSite:"none" (with secure:true) to be sent on those
-// cross-origin credentialed requests — that's what lets us drop the old
-// leak-prone "?token=" URL handoff entirely. Locally everything is http on
-// localhost, where sameSite:"none" without HTTPS is rejected, so we fall back
-// to "lax".
-// In production all three services run under one registrable domain
-// (www / app / api subdomains), so the auth cookie is first-party on every
-// request and sameSite:"lax" is both sufficient and the safer default —
-// it blocks the cross-site CSRF vectors that sameSite:"none" would allow.
-// secure:true (HTTPS-only) is kept in production. Locally everything is http
-// on localhost, where "lax" also works.
+// sameSite is the one attribute the deployment has to decide, because it
+// depends on where the three services end up:
+//
+//   All three under one registrable domain (api. / app. / www.example.com):
+//     leave COOKIE_SAMESITE unset. "lax" is first-party on every request and
+//     blocks the cross-site vectors "none" would open up. This is the default
+//     and the safer choice.
+//
+//   Unrelated domains (the platform defaults — *.onrender.com for the API,
+//     *.netlify.app for the frontends): set COOKIE_SAMESITE=none. Without it
+//     the browser simply declines to send the cookie and every authenticated
+//     request comes back 401, with nothing in any log to explain why.
 const isProd = process.env.NODE_ENV === "production";
+
+const SAME_SITE_VALUES = ["lax", "none", "strict"] as const;
+type SameSite = (typeof SAME_SITE_VALUES)[number];
+
+function resolveSameSite(): SameSite {
+  const configured = (process.env.COOKIE_SAMESITE ?? "lax").trim().toLowerCase();
+  if (!SAME_SITE_VALUES.includes(configured as SameSite)) {
+    throw new Error(
+      `COOKIE_SAMESITE must be one of ${SAME_SITE_VALUES.join(", ")} — got "${configured}"`,
+    );
+  }
+  // Browsers reject SameSite=None unless Secure is also set, and secure is
+  // tied to NODE_ENV. Getting this combination wrong drops the cookie on every
+  // single login, so refuse to boot rather than fail silently in the browser.
+  if (configured === "none" && !isProd) {
+    throw new Error(
+      "COOKIE_SAMESITE=none requires NODE_ENV=production — that is what sets " +
+        "Secure on the cookie, and browsers reject SameSite=None without it",
+    );
+  }
+  return configured as SameSite;
+}
+
 const TOKEN_COOKIE: CookieOptions = {
   httpOnly: true,
   secure: isProd,
-  sameSite: "lax",
+  sameSite: resolveSameSite(),
 };
 const TOKEN_MAX_AGE_MS = 12 * 60 * 60 * 1000; // match the JWT's 12-hour lifetime
+
+// A real hash to compare against when the email doesn't exist. Without it,
+// "no such user" returns as fast as the DB lookup while a wrong password costs
+// a full bcrypt verify — and that timing gap alone tells an attacker which
+// email addresses have accounts. Hashed once at boot at the same cost factor
+// as stored passwords (BCRYPT_COST) so the two paths take the same time —
+// measured at ~390ms either way, against a ~390ms gap before this existed.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("bluechip-nonexistent-account", BCRYPT_COST);
 
 // Lowercased/trimmed so the lookup matches the schema-normalized stored email.
 const normalizeEmail = (email: string): string => email.trim().toLowerCase();
@@ -104,7 +139,7 @@ export const Signup = async (req: Request, res: Response): Promise<void> => {
       user: { id: user._id, email: user.email, username: user.username },
     });
   } catch (error) {
-    console.error(error);
+    log.error("auth.signup_failed", { err: error as Error });
     res.status(500).json({ message: "Something went wrong. Please try again." });
   }
 };
@@ -133,14 +168,12 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
 
     // 1. Find the user by email (normalized to match the stored form)
     const user = await UserModel.findOne({ email: normalizeEmail(email) });
-    if (!user) {
-      res.status(401).json({ success: false, message: "Incorrect password or email" });
-      return;
-    }
 
-    // 2. Compare the typed password with the stored hash
-    const auth = await bcrypt.compare(password, user.password);
-    if (!auth) {
+    // 2. Compare the typed password with the stored hash — or with the dummy
+    //    hash when there's no such user, so both paths cost the same bcrypt
+    //    verify and the response time reveals nothing about who has an account.
+    const auth = await bcrypt.compare(password, user ? user.password : DUMMY_PASSWORD_HASH);
+    if (!user || !auth) {
       res.status(401).json({ success: false, message: "Incorrect password or email" });
       return;
     }
@@ -152,16 +185,37 @@ export const Login = async (req: Request, res: Response): Promise<void> => {
     // Token lives only in the httpOnly cookie set above, not the body.
     res.status(200).json({ message: "User logged in successfully", success: true });
   } catch (error) {
-    console.error(error);
+    log.error("auth.login_failed", { err: error as Error });
     res.status(500).json({ message: "Something went wrong. Please try again." });
   }
 };
 
-// LOGOUT — clears the auth cookie. JWTs are stateless, so any token already
-// in a client's hands stays valid until it expires; clearing the cookie is
-// the meaningful server-side step for the cookie-based (same-origin) flow.
-// Header-based (cross-origin) clients simply drop their stored token.
-export const Logout = async (_req: Request, res: Response): Promise<void> => {
+// LOGOUT — clears the auth cookie AND revokes the token server-side.
+//
+// Clearing the cookie alone only asks the browser to forget the token; a copy
+// captured beforehand would stay valid for the rest of its 12-hour life. The
+// schema already carries tokenVersion and every request checks it, so bumping
+// it here is what turns logout into real revocation.
+//
+// Note this revokes the user's OTHER sessions too — logging out anywhere logs
+// out everywhere. For an account that can place orders, that's the safer
+// default than leaving a captured token live.
+//
+// Best-effort by design: an expired or forged token has nothing to revoke, and
+// a failed bump must not strand the user in a logged-in-looking state. Either
+// way the cookie is cleared and the response is 200.
+export const Logout = async (req: Request, res: Response): Promise<void> => {
+  const token = extractToken(req);
+  if (token) {
+    try {
+      const payload = jwt.verify(token, process.env.TOKEN_KEY as string, {
+        algorithms: ["HS256"],
+      }) as JwtPayload;
+      await UserModel.updateOne({ _id: payload.id }, { $inc: { tokenVersion: 1 } });
+    } catch (err) {
+      log.warn("auth.revoke_skipped", { reason: (err as Error).message });
+    }
+  }
   res.clearCookie("token", TOKEN_COOKIE);
   res.status(200).json({ success: true, message: "Logged out" });
 };

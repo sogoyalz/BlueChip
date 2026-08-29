@@ -1,0 +1,20 @@
+{
+  "name": "bluechip-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Browser journey across the landing app, the dashboard and the API.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^20.11.0",
+    "mongodb-memory-server": "^10.1.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=22.22.2"
+  }
+}

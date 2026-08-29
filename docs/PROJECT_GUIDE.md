@@ -1,240 +1,529 @@
-# BlueChip — Complete Project Guide
+# BlueChip — Project Guide
 
-This document explains the **entire project**: what it is, every technology we use and *why*, how data flows through the system, and what every file does. Read this top to bottom and you'll understand the whole codebase.
-
----
-
-## 1. What is BlueChip?
-
-BlueChip is a **crypto paper-trading platform**. In plain words:
-
-- Anyone can create an account and receive **$100,000 of fake money**.
-- They trade real cryptocurrencies (Bitcoin, Ethereum, Solana, …) at **real live prices** pulled from the **Gemini exchange's public API**.
-- Orders, balances, holdings, and profit/loss are all tracked like a real exchange — but **no real money ever exists**. It's a simulator.
-
-Think of it as: *the front half of a real exchange (live prices, charts, order types), with the back half (money and settlement) fully simulated in our own database.*
-
-**Why paper trading?** Because it lets the site be public without any financial or legal risk, no per-user exchange accounts, and no API keys to protect — while still requiring us to build genuinely exchange-like machinery (order matching, atomic accounting, live market data).
+What this system is, how it actually works, and what every file does. This
+document describes the code as it exists. Where something is a known gap it is
+labelled as one; nothing here is aspirational.
 
 ---
 
-## 2. The Big Picture — three apps
+## 1. What BlueChip is
+
+A crypto trading platform whose orders **execute for real against Gemini's
+sandbox exchange**.
+
+This is the part that surprises people, so it is worth being precise:
+
+- Prices are real, streamed live from Gemini.
+- Orders are placed on a real matching engine, rest in a real book, and fill —
+  or partially fill, or don't fill — according to real market movement.
+- The funds are test funds on a Gemini **sandbox** account. No real money can
+  be deposited, withdrawn, or lost.
+
+It is **not** a simulator with a fake matching engine. There is no local order
+matcher, no per-user cash ledger, and no synthetic fills. Gemini is the source
+of truth for every order's state, and this backend's job is to place orders,
+reconcile their status, and present the account.
+
+### The shared-account model
+
+There is **one** Gemini sandbox account, and every signed-in user trades
+against it. Balances and holdings are properties of that single account, so
+every user sees the same ones. Orders are attributed per user in MongoDB (a
+user only ever sees their own), but the money behind them is shared.
+
+This is deliberate. A trading API key acts on exactly one account, so giving
+each visitor their own real sandbox account is not possible. The alternative —
+simulating per-user balances — is what this project moved *away* from, because
+it meant writing a fake matching engine and calling the fills real.
+
+The consequence to keep in mind while working on this codebase: **two users
+acting at once are acting on the same money.** Concurrency bugs that would be
+per-user annoyances in a normal design are account-wide here.
+
+---
+
+## 2. Three apps
 
 ```
-                                   ┌──────────────────────────┐
-                                   │   Gemini exchange (public)│
-                                   │  REST API + WebSocket     │
-                                   └───────────┬──────────────┘
-                                               │ live prices, candles
-                                               ▼
-┌──────────────┐   signup/login    ┌──────────────────────────┐      ┌──────────┐
-│  frontend/   │ ────────────────► │        backend/           │ ◄──► │ MongoDB  │
-│ landing site │                   │  Express API + simulated  │      │ users,   │
-│  port 3000   │  redirect with    │  exchange engine          │      │ orders,  │
-└──────────────┘  ?token=JWT       │  port 3002                │      │ holdings │
-        │                          └───────────▲──────────────┘      └──────────┘
-        ▼                                      │ prices, orders, portfolio
-┌──────────────┐                               │
-│  dashboard/  │ ──────────────────────────────┘
+                    Gemini (public market data)          Gemini (private, sandbox)
+                    REST ticker + candles                 authenticated, HMAC-signed
+                    v2 WebSocket (trades + l2 book)       order placement / status / balances
+                              │                                        ▲
+                              ▼                                        │
+┌──────────────┐      ┌───────────────────────────────────────────────────────┐      ┌──────────┐
+│  frontend/   │      │                       backend/                        │      │ MongoDB  │
+│ landing site │─────▶│  shared price cache · order engine · reconciler · SSE │◀────▶│  users   │
+│  :3000       │ auth │                        :3002                          │      │  orders  │
+└──────────────┘      └───────────────────────────────────────────────────────┘      │ snapshots│
+        │                          ▲                    │                            └──────────┘
+        │ cookie                   │ REST + SSE         │
+        ▼                          │                    ▼
+┌──────────────┐                   │            price stream to browsers
+│  dashboard/  │───────────────────┘
 │ trading app  │
-│  port 3001   │
+│  :3001       │
 └──────────────┘
 ```
 
 | App | What it is | Port |
 |---|---|---|
-| `frontend/` | Marketing/landing site + signup & login forms | 3000 |
-| `dashboard/` | The trading app users see after login | 3001 |
-| `backend/` | REST API + the simulated exchange engine | 3002 |
+| `backend/` | Express API. JSON + SSE only — it never serves HTML | 3002 |
+| `dashboard/` | The trading app: watchlist, orders, holdings, charts | 3001 |
+| `frontend/` | Marketing site plus the signup and login forms | 3000 |
 
-They are three separate apps (a "monorepo") so each can be deployed independently: the two React apps become static sites (Netlify), the backend runs as a Node server (Render).
+Separate apps so each deploys independently: the two React apps build to static
+sites (Netlify), the backend runs as a Node service (Render).
+
+**Auth crosses app boundaries via a cookie.** The landing site posts credentials
+to the backend, which sets an httpOnly cookie; the dashboard then loads already
+authenticated. There is no token in the URL and no token in a request body —
+both leak into logs, history, and referrer headers. The cookie is
+`sameSite: "lax"`, which requires all three services to share one registrable
+domain in production (`www.` / `app.` / `api.`). Deploying them on unrelated
+domains breaks login silently — see §7.
 
 ---
 
-## 3. Tech Stack — what we use and WHY
+## 3. Tech stack, and why
 
 ### Backend
-| Tech | Why we chose it |
-|---|---|
-| **Node.js + TypeScript** | One language (TypeScript) across the whole repo; types catch bugs at compile time — vital for money math. Node 18+ has built-in `fetch`, so calling Gemini's REST API needs no extra library. |
-| **Express 5** | The standard, minimal web framework for Node. Routes + middleware are easy to read and test. |
-| **MongoDB + Mongoose 9** | Document DB fits our shapes (a holding, an order) naturally. Crucially, MongoDB gives us **atomic conditional updates** — the trick that makes trading safe without locks (see §5). Mongoose adds schemas + types on top. |
-| **JWT (`jsonwebtoken`) + bcrypt** | Stateless login: the server signs a token at login; every request proves identity by presenting it. bcrypt (cost 12) hashes passwords so a DB leak never exposes them. |
-| **`ws`** | Raw WebSocket client used to subscribe to Gemini's live market-data stream. |
-| **`express-rate-limit`** | The site is public; this stops brute-force login attempts and order spam. |
-| **Jest + ts-jest + supertest** | Tests run the real Express app in-memory (supertest) with the database **mocked** — so 100+ tests run in ~2 seconds with no DB and no network. |
-
-### Dashboard (trading app)
 | Tech | Why |
 |---|---|
-| **React 19 + TypeScript (Create React App)** | Component model fits a live-updating trading UI; shared types in `src/types.ts` mirror the backend's schemas. |
-| **Material UI** | Ready-made accessible components (tooltips, icons) so we focus on trading logic, not widget plumbing. |
-| **Chart.js 4 + react-chartjs-2** | Battle-tested canvas charts (bar, doughnut). |
-| **`chartjs-chart-financial` + `chartjs-adapter-date-fns`** | Adds the **candlestick** chart type to Chart.js — the classic trading chart — reusing the library we already ship instead of adding a second charting stack. |
-| **axios + react-cookie + react-toastify** | HTTP client, auth-cookie handling, and non-blocking success/error notifications. |
-| **react-router 7** | Client-side pages: Summary, Orders, Holdings, Leaderboard, Funds, Market detail. |
+| Node + TypeScript | One language across the repo; types matter most around money and order state. Node's built-in `fetch` covers Gemini's REST API with no HTTP library. |
+| Express 5 | Minimal, well-understood. Express 5 forwards async handler rejections to the error handler on its own. |
+| MongoDB + Mongoose 9 | Document shapes fit orders and snapshots. Mongoose adds schema validation, typing, and `sanitizeFilter` for injection defence. |
+| `jsonwebtoken` + `bcrypt` | Stateless sessions with a server-side revocation escape hatch (§5). bcrypt cost 12. |
+| `ws` | Gemini's v2 market-data WebSocket. |
+| `express-rate-limit` | Public surface: brute-force and order-spam limits. |
+| `helmet` | Security headers. CSP is off — this API never serves HTML, and a CSP would only risk breaking the SSE stream. |
+| Jest + ts-jest + supertest | Tests drive the real Express app in-process with models and the Gemini client mocked, so the suite needs no database and no network. |
 
-### Frontend (landing site)
-React 19 + TypeScript + Bootstrap. Static marketing pages plus the signup/login forms that talk to the backend.
+### Dashboard
+React 19 + TypeScript on Vite, Material UI for tooltips/icons,
+Chart.js 4 with `chartjs-chart-financial` for candlesticks, axios,
+react-toastify, react-router 7.
 
-### Why Gemini (and not an API key per user)?
-Gemini's **public** market-data API needs **no key and no account**: tickers, candles, and a streaming WebSocket are free to read. Trading APIs (any exchange) act on ONE account per key — they can't give thousands of anonymous visitors their own accounts. So: **prices come from Gemini, trades settle in our own MongoDB.** One backend feed serves every user, so Gemini's rate limits never scale with user count.
+### Frontend
+React 19 + TypeScript on Vite + Bootstrap.
+
+Both apps build with Vite and test with Vitest. They were on Create React App
+until it was retired here: `react-scripts` is unmaintained and carried 28
+build-toolchain audit findings apiece that no version bump could clear. None
+of it ever shipped to the browser, but it made `npm audit` useless as a gate
+and pinned the dependency tree behind `--legacy-peer-deps`. Both are gone.
 
 ---
 
 ## 4. How data flows
 
-### Prices (the heartbeat of the app)
-1. `backend/services/geminiWs.ts` holds one WebSocket to Gemini. Every real trade on Gemini for our 8 symbols updates…
-2. `backend/services/priceFeed.ts` — a single in-memory `Map` of `symbol → {price, changePct24h, updatedAt, source}`. A REST poller (every 30s) runs underneath as a fallback and supplies the 24h-change number (the WS doesn't carry it).
-3. The dashboard's `PricesContext.tsx` polls `GET /api/prices` every 5s and hands prices to every component (watchlist, top bar, trade modal, charts) through React context.
+### Prices
 
-*Why polling to the browser instead of a WebSocket?* Simplicity and free-tier friendliness. Reading an in-memory map costs microseconds; 5s latency is fine for paper trading; and upgrading later means changing exactly one file (`PricesContext.tsx`).
+1. **`services/geminiWs.ts`** holds one WebSocket to Gemini's v2 market-data
+   feed, subscribed to all curated symbols. Trade events set the price; `l2`
+   changes feed the order book. The first `l2_updates` after subscribing is a
+   full snapshot, which resets the book so stale levels can't survive a
+   reconnect.
+2. **`services/priceFeed.ts`** is the single shared cache: `symbol → {price,
+   changePct24h, updatedAt, source}`. A REST poller runs underneath every 30s
+   as a permanent fallback and is the **only** source of the 24h-change figure,
+   which the WebSocket does not carry. The poller will not overwrite a
+   WebSocket price newer than 5s.
+3. **`services/sse.ts`** broadcasts the whole cache to connected browsers every
+   2s over Server-Sent Events, with a keep-alive comment every 25s and a
+   per-IP stream cap.
+4. **`PricesContext.tsx`** in the dashboard subscribes to `GET /api/stream` and
+   falls back to polling `GET /api/prices` if the stream cannot connect. A
+   clock-based check marks prices stale if nothing has arrived in 15s,
+   regardless of transport — EventSource retries silently, so without that
+   check a wedged backend would show frozen prices labelled "Live".
+
+No user request ever reaches Gemini directly. One feed serves every visitor, so
+Gemini's rate limits do not scale with user count.
 
 ### An order, end to end
-1. User clicks **Buy** in `BuySellModal.tsx` → `POST /api/orders {symbol, side, type, qty, limitPrice?}`.
-2. `verifyToken` middleware identifies the user; `orderLimiter` rate-limits them.
-3. `orderEngine.placeOrder()` validates (symbol whitelist, qty caps, **price freshness** — stale market data means a 503, never a bad fill).
-4. **MARKET** order: fills instantly at the cached live price — debit cash, upsert holding, mark `FILLED` (or `REJECTED` with a reason).
-   **LIMIT** order: stored with status `OPEN`.
-5. `matcher.ts` wakes every 2 seconds, scans OPEN limit orders, and fills any the market has crossed — at the market price (*price-or-better*, like a real exchange).
-6. After every fill, `snapshots.ts` records the user's total portfolio value — that's what draws the Summary chart.
+
+1. `BuySellModal.tsx` → `POST /api/orders {symbol, side, type, qty, limitPrice?,
+   clientOrderId?}`.
+2. `verifyToken` identifies the user; `orderLimiter` caps them at 30/min.
+3. `orderEngine.placeOrder()` validates: symbol allowlist, `qty > 0` and under
+   the size cap, notional under the cap, `limitPrice` present and plausible for
+   LIMIT orders, and **price freshness** — market data older than 30s is a 503,
+   never a bad fill.
+4. If a `clientOrderId` was supplied and an order already exists for it, that
+   order is returned and nothing is placed. This is what makes a retry safe.
+5. The order goes to Gemini. A **MARKET order is emulated as an
+   immediate-or-cancel limit priced to cross the book** (a BUY bids 1% above,
+   a SELL offers 1% below). Gemini has no plain market type for this flow.
+6. The response determines the recorded status: nothing executed → `REJECTED`
+   for MARKET (IOC, so the remainder is gone) or `OPEN` for LIMIT; fully
+   executed → `FILLED`; partly executed → `PARTIALLY_FILLED` for MARKET or
+   `OPEN` for a LIMIT that still rests. `filledQty` records what actually
+   executed, which is not always `qty`.
+7. If anything executed, the balances cache is invalidated and a portfolio
+   snapshot is taken.
+8. **`services/orderSync.ts`** reconciles afterwards. Every 5s it loads locally
+   resting orders, fetches Gemini's active-order list in **one** call, and
+   updates from it. Only orders that have *left* the book need an individual
+   status lookup, and those are capped per tick. Status changes and new
+   executions are written back; a new execution invalidates balances and
+   snapshots.
+
+### Cancelling
+
+`POST /api/orders/:id/cancel` cancels on Gemini **first**, then reconciles local
+state to whatever Gemini reports. An order can fill in the moment before a
+cancel lands, and the route returns that outcome truthfully rather than
+reporting a cancel that did not happen.
 
 ---
 
-## 5. The three hard problems (and how we solve them)
+## 5. Correctness model
 
-**1. Two requests racing for the same money.** A user double-clicks Buy with $100 left; both requests check "balance ≥ cost?" then both debit → negative balance. Classic race condition. Our fix: **conditional atomic updates** — check and debit happen as ONE database operation:
-```js
-UserModel.updateOne(
-  { _id: userId, balance: { $gte: cost } },  // only matches if still affordable
-  { $inc: { balance: -cost } }               // …and debits in the same operation
-)
-```
-If `modifiedCount === 0`, the money was already gone → the order becomes `REJECTED "Insufficient funds"`. Same pattern guards sell quantities and order-status transitions (a cancel and a matcher fill can race — whoever flips `OPEN` first wins, atomically). No locks, no transactions, can't go negative.
+### Money
 
-**2. Floating-point money.** `0.1 + 0.2 === 0.30000000000000004` in JavaScript. Every dollar amount passes through `roundUsd()` (2 decimals) and every coin quantity through `roundQty()` (8 decimals) in `util/money.ts`; selling "everything" tolerates float dust via `QTY_EPSILON`, and near-zero leftover rows get deleted.
+Gemini owns the ledger. This backend never mutates a balance.
 
-**3. A flaky external feed.** Gemini's WebSocket can die silently (half-open TCP). `geminiWs.ts` runs a **heartbeat watchdog** (no message for 30s → kill and reconnect), reconnects with **exponential backoff + jitter** (1s → 30s cap), and uses a **generation counter** so a zombie socket can never write stale prices over a fresh one. And because the REST poller never stops, trading survives WS outages.
+Where it *aggregates* money — portfolio value, cash, snapshots — it works in
+**integer cents**, because summing many float dollar amounts drifts sub-cent.
+Each holding is converted to cents individually and the totals are summed as
+integers; `fromCents()` converts back at the API edge only. Snapshots persist
+`valueCents` / `cashCents`.
+
+Order *prices* stay decimal (`limitPrice`, `fillPrice`). They mirror Gemini's
+own decimal price model, and Gemini — not this app — is the ledger for them.
+
+`util/money.ts` holds `roundUsd` (2dp), `roundQty` (8dp), `toCents`,
+`fromCents`, `QTY_EPSILON`, and the order size caps.
+
+### Auth
+
+- JWT in an httpOnly cookie, or an `Authorization: Bearer` header. **Nowhere
+  else** — `extractToken` in `AuthMiddleware.ts` is the single intake point,
+  and it deliberately refuses the query string and the request body.
+- HS256 pinned on both the signing and verifying side.
+- `tokenVersion` on the user is compared against the token's `tv` claim on
+  every request. **Logout increments it**, which is what makes logout an actual
+  revocation rather than a request that the browser forget a cookie. It signs
+  the user out everywhere; for an account that can place orders that is the
+  safer default.
+- Login runs a bcrypt comparison even when the email does not exist, against a
+  dummy hash generated at the same `BCRYPT_COST`. Without it, "no such user"
+  returns at database speed while a wrong password costs a full verify, and
+  that gap alone enumerates registered addresses.
+- CSRF: every state-changing request must carry `X-Requested-With:
+  XMLHttpRequest`, a header only same-origin or CORS-permitted JavaScript can
+  set. Layered with the `sameSite: "lax"` cookie.
+- `mongoose.set("sanitizeFilter", true)` globally strips `$`-operators from
+  query filters; the two places that legitimately need one wrap it in
+  `mongoose.trusted()`.
+
+### The external feed
+
+Gemini's WebSocket can die silently (half-open TCP). `geminiWs.ts` runs a
+watchdog (no message for 30s → terminate and reconnect), reconnects with
+exponential backoff and jitter (1s → 30s cap), and carries a **generation
+counter** so a zombie socket's handlers can never write over a live one. The
+REST poller never stops, so prices survive a WebSocket outage.
+
+### Concurrency — and a known gap
+
+The shared account raises the stakes on concurrent writes.
+
+Handled: the `(userId, clientOrderId)` unique **partial** index makes duplicate
+submissions safe; if two requests race past the pre-insert check, the loser's
+`E11000` is turned into "return the order the winner persisted", and Gemini
+dedupes on the same key so the exchange cannot double-fill. The balances cache
+carries a generation counter so a fetch already in flight when a fill
+invalidates the cache cannot republish its pre-fill data.
+
+The cancel route and `orderSync` both write order state, and they can run at
+the same instant. Neither takes a lock. Instead, both go through one
+conditional atomic update in `services/orderState.ts`, keyed on the single
+thing that is monotonic: **an order's executed amount on the exchange only ever
+increases**, so it doubles as a version number. The observation reporting more
+executed is the more recent truth, whichever write happens to land second, and
+the two orderings converge on the same state.
+
+This replaced a genuine last-write-wins bug. Both writers used to read the
+document, mutate it and `save()`; mongoose's default versioning only guards
+array paths, so a cancel carrying older knowledge could overwrite a fill the
+reconciler had just recorded — and because `CANCELLED` is terminal, the
+reconciler would never revisit the order, making the divergence permanent.
 
 ---
 
-## 6. File-by-file walkthrough
+## 6. File by file
 
-### `backend/` — the API + exchange engine
+### `backend/`
 
-**Entry & config**
+**Entry and config**
+
 | File | What it does |
 |---|---|
-| `index.ts` | The Express app. Wires middleware (CORS, JSON body w/ 10kb cap, cookies, rate limits), mounts all routes, defines `/allHoldings`, `/api/account`, `/api/account/reset`, `/healthz`, runs the idempotent startup **migration** (backfills `balance` on old users, purges pre-pivot data), and on boot starts the four background services: WebSocket feed, REST poller, limit-order matcher, snapshot sweeper. Exports `app` without listening when imported — that's how tests drive it. |
-| `config/symbols.ts` | The curated list of 8 tradable Gemini pairs (BTCUSD…AVAXUSD) with display names. Validated against Gemini's live symbol directory at boot so a delisted coin gets dropped instead of erroring forever. Kept small on purpose: 8 symbols keeps REST polling far under Gemini's ~120 req/min public limit. |
-| `tsconfig.json`, `jest.config.js`, `package.json` | TypeScript build (`tsc` → `dist/`), ts-jest test setup, scripts (`start` dev via nodemon, `build`, `serve` for production). |
-| `.env.example` | Documents every env var: `MONGO_URL`, `TOKEN_KEY`, `PORT`, `CORS_ORIGINS`, rate-limit overrides, optional Gemini sandbox URLs. |
+| `index.ts` | Wiring and boot only (~170 lines). Builds the Express app: helmet, CORS (origins trimmed — a stray space would silently match nothing), 10kb JSON cap, cookies, rate limits, CSRF on unsafe methods. Mounts the routes, defines `GET /api/holdings`, `GET /api/account`, `GET /healthz`. On boot: validates symbols against Gemini, starts the WebSocket, REST poller, order reconciler, snapshot sweeper and SSE broadcaster. Exports `app` without listening when imported, which is how tests drive it. |
+| `migrations.ts` | The gated one-shot migration (§7), split out of index.ts. |
+| `lifecycle.ts` | SIGTERM/SIGINT draining, split out of index.ts. |
+| `config/symbols.ts` | The eight curated Gemini pairs and helpers. Cross-checked against Gemini's live symbol directory at boot so a delisted pair is dropped rather than polled forever; a network failure leaves the list untouched. |
+| `.env.example` | Every environment variable, documented. Mirrored in §8. |
 
-**Schemas & models** (`schemas/` define shape, `model/` register them with Mongoose)
-| File | Shape & purpose |
+**Schemas and models**
+
+| File | Shape |
 |---|---|
-| `schemas/UserSchema.ts` | `{email, username, password, balance, createdAt}`. The pre-save hook bcrypt-hashes the password — **guarded by `isModified("password")`** so a later save can't re-hash the hash and lock the user out. `balance` defaults to $100,000. |
-| `schemas/HoldingsSchema.ts` | `{userId, symbol, qty, avgCost}` — one row per user per coin (enforced by a unique compound index). `avgCost` is the weighted-average purchase price, used for P&L. |
-| `schemas/OrdersSchema.ts` | `{userId, symbol, side: BUY/SELL, type: MARKET/LIMIT, status: OPEN/FILLED/CANCELLED/REJECTED, qty, limitPrice?, fillPrice?, reason?, createdAt, filledAt?}` — a full order lifecycle, indexed for the matcher (`status+type`) and the user's order list (`userId+createdAt`). |
-| `schemas/SnapshotSchema.ts` | `{userId, value, cash, ts}` — a point-in-time portfolio value; powers the performance chart. |
-| `model/UserModel.ts`, `HoldingsModel.ts`, `OrdersModel.ts`, `SnapshotModel.ts` | One-liners that register each schema as a Mongoose model. |
+| `schemas/UserSchema.ts` | `{email, username, password, createdAt, tokenVersion}`. Email is lowercased and trimmed with a unique index. The pre-save hook bcrypt-hashes at `BCRYPT_COST`, guarded by `isModified("password")` so a later save cannot hash the hash. **There is no `balance` field** — balances live on the Gemini account. |
+| `schemas/OrdersSchema.ts` | `{userId, symbol, side, type, status, qty, filledQty?, limitPrice?, fillPrice?, geminiOrderId?, clientOrderId?, reason?, createdAt, filledAt?}`. Indexes for the reconciler (`status+type`), the user's list (`userId+createdAt`), and idempotency. |
+| `schemas/SnapshotSchema.ts` | `{valueCents, cashCents, ts}` — the shared account's value over time, in integer cents. Not per user. |
+| `model/*.ts` | One-line model registrations. |
 
-**Services — the interesting logic**
+**Services**
+
 | File | What it does |
 |---|---|
-| `services/gemini.ts` | Thin typed wrappers over Gemini's public REST API: `fetchSymbols()`, `fetchTickerV2()` (price + 24h change), `fetchCandles()` (OHLCV history). Uses Node's built-in `fetch`. |
-| `services/priceFeed.ts` | **The single shared price cache.** `startPolling()` refreshes every symbol on an interval; `setPrice()` lets the WebSocket inject fresher prices; `isFresh()` is the safety check the order engine uses (never fill on data older than 30s); errors on one symbol never break the loop. |
-| `services/geminiWs.ts` | The Gemini v2 market-data WebSocket client: subscribes to all symbols, feeds trade prices into the cache tagged `source:"ws"` and every l2 book change into `orderBook.ts` (a reconnect snapshot resets the book so stale levels can't linger). Contains the watchdog / backoff / generation-counter reliability machinery from §5. |
-| `services/orderBook.ts` | Live order books built from the l2 feed: per-symbol bid/ask price levels (a change with qty 0 removes the level), served as top-10 depth with best price first. |
-| `services/sse.ts` | Server-Sent Events broadcaster: browsers hold one `GET /api/stream` open and receive the price cache every 2s — the streaming path runs Gemini WS → cache → SSE → browser, with the dashboard falling back to polling if the stream can't connect. |
-| `services/orderEngine.ts` | **The core.** `placeOrder()` = validation + market-fill or limit-placement. `applyFillEffects()` = the atomic money movement: conditional debit, weighted-average holding upsert (done *inside MongoDB* via an aggregation-pipeline update so concurrent buys compute the average correctly; note Mongoose 9 requires `updatePipeline: true`), guarded sell decrement, dust cleanup, refund-on-failure. Sells also book **realized P&L** — `(fill price − avg cost) × qty` — onto both the order and the user's running total. Shared by the market path and the matcher. |
-| `services/matcher.ts` | The background limit-order matcher: every 2s, find OPEN limit orders, check `crossed()` (BUY fills when market ≤ limit; SELL when market ≥ limit), **claim the order atomically** (`OPEN→FILLED`), then apply portfolio effects; if funds vanished since placement → `REJECTED`. |
-| `services/snapshots.ts` | `snapshotUser()` after each fill/signup/reset; `snapshotAll()` sweeps every user each 15 min so idle portfolios still chart as prices drift. |
+| `services/gemini.ts` | Typed wrappers over Gemini's **public** REST API: `fetchSymbols`, `fetchTickerV2`, `fetchCandles`. No credentials. |
+| `services/geminiPrivate.ts` | The **signed** sandbox client: HMAC-SHA384 over a base64 payload, strictly increasing nonce. Refuses to load if its base URL is not a sandbox host. Exposes order placement, cancel, status, active orders, and balances — the last cached briefly with concurrent callers coalesced onto one request. |
+| `services/priceFeed.ts` | The shared price cache and REST poller. `isFresh()` is the guard the order engine uses. |
+| `services/geminiWs.ts` | The market-data WebSocket, with the watchdog, backoff and generation counter from §5. |
+| `services/orderBook.ts` | Per-symbol bid/ask levels built from the `l2` feed; a change with quantity 0 removes a level. Serves top-N depth, best price first. |
+| `services/orderEngine.ts` | Validation, MARKET-as-IOC pricing, idempotency, placement, persistence, and the cancel helper. Also the orphaned-fill path: if the local write fails after the order is already live on the exchange, it logs the exchange's order id and still invalidates balances, because the trade happened regardless. |
+| `services/orderSync.ts` | The reconciler described in §4. |
+| `services/account.ts` | Holdings and account totals over the shared sandbox account, in integer cents. Lifted out of the route handlers so the money aggregation is testable without HTTP. |
+| `services/orderState.ts` | The one place order state is written. Applies an exchange observation conditionally and atomically, so a stale writer cannot overwrite a newer one (§5). |
+| `services/snapshots.ts` | Portfolio value in integer cents, on a 15-minute sweep and after every fill. |
+| `services/sse.ts` | The SSE broadcaster: client registry, per-IP cap, price frames, keep-alives. |
 
 **Routes, middleware, util**
-| File | What it does |
-|---|---|
-| `routes/AuthRoute.ts` | `POST /signup`, `POST /login`, `POST /` (session check). |
-| `routes/MarketRoute.ts` | Public, no auth: `/api/symbols`, `/api/prices`, `/api/candles/:symbol` (proxied + TTL-cached so a thousand chart viewers cost Gemini one request per minute). |
-| `routes/OrderRoute.ts` | `POST /api/orders`, `GET /api/orders`, `POST /api/orders/:id/cancel` — all behind auth + per-user rate limit. |
-| `routes/PortfolioRoute.ts` | `GET /api/leaderboard` (everyone ranked by cash + live holdings value; memoized 30s) and `GET /api/portfolio/history` (snapshots downsampled to ≤200 chart points). |
-| `controllers/AuthController.ts` | Signup (validates, rejects duplicates, never echoes the hash, seeds the first snapshot) and Login (bcrypt compare, generic error message so attackers can't tell which field was wrong). |
-| `middlewares/AuthMiddleware.ts` | `verifyToken` — the route guard. Accepts the JWT from cookie, `Authorization: Bearer`, or `?token=` (the dashboard runs on a different origin, so the fallbacks matter). Loads the user onto `req.user`. `userVerification` — the "am I logged in?" check. |
-| `middlewares/rateLimit.ts` | Three limiters: auth (20/15min per IP), orders (30/min per **user**), global (300/min). Env-overridable. |
-| `util/money.ts` | `roundUsd`, `roundQty`, `QTY_EPSILON`, `STARTING_CASH`, order-size caps, `weightedAvgCost` — the single home of all money math. |
-| `util/SecretToken.ts` | Signs the 3-day JWT. |
-
-**Tests** (`__tests__/`, 102 tests, no DB or network needed)
-| File | Covers |
-|---|---|
-| `api.test.ts` | Auth contract: signup/login/session, per-user holdings scoping, `/api/account`. |
-| `orders.test.ts` | The engine: validation matrix, exact debits, insufficient funds/qty → REJECTED, refund-on-failure, limit placement + soft affordability, cancel, epsilon sell-all. |
-| `matcher.test.ts` | Crossing logic both directions, atomic claim (a lost race mutates nothing), fill-time rejection, error isolation. |
-| `priceFeed.test.ts` | Cache population, per-symbol error isolation, WS-vs-REST precedence, staleness. |
-| `geminiWs.test.ts` | WS message parsing (trades, snapshots, junk) and backoff math. |
-| `market.test.ts` | Candle proxy: whitelists, ascending order, TTL cache, stale-cache-on-error. |
-| `leaderboard.test.ts` / `snapshots.test.ts` | Ranking math + memoization; snapshot values + history downsampling. |
-| `money.test.ts` / `userSchema.test.ts` | Rounding edge cases; the password re-hash guard; symbol validation. |
-| `hardening.test.ts` | `/healthz`, 429 rate limiting, oversized-field and oversized-body rejection. |
-
-### `dashboard/` — the trading app
 
 | File | What it does |
 |---|---|
-| `src/config.ts` | `API_URL` and `LOGIN_URL` — the single place backend/login origins live (env-overridable for production). |
-| `src/types.ts` | Shared TypeScript types mirroring the backend: `Holding`, `Order`, `Account`, `TickerPrice`, `SymbolInfo`, `Candle`. |
-| `src/index.tsx`, `index.css`, `theme.ts` | App bootstrap; the design tokens (dark theme, red accent `#e50914`, gain/loss greens/reds) live in `index.css` `:root` and are mirrored into the MUI theme. |
-| `components/Home.tsx` | The auth shell. Handles the cross-origin login handoff: landing site redirects here with `?token=JWT`, Home stores it as a cookie, scrubs the URL, verifies it with the backend, and wraps the app in `PricesProvider`. |
-| `components/PricesContext.tsx` | **The live-price bloodstream**: subscribes to `/api/stream` (Server-Sent Events) so prices push in as they change, falling back to polling `/api/prices` if the stream can't connect; exposes `{prices, symbols, isStale}` to every component via context. |
-| `components/shared/DepthPanel.tsx` | Top-of-book order depth on the market page: ten bid and ask levels with quantity bars and the live spread, hidden gracefully whenever the book is empty. |
-| `components/TopBar.tsx` | Paper-trading disclaimer banner, live BTC & ETH tickers, and the Live/Delayed pill (dims when data is stale; tooltip says when prices are streaming via WebSocket). |
-| `components/Menu.tsx` | Nav: Dashboard / Orders / Holdings / Leaderboard / Funds / Apps. |
-| `components/Dashboard.tsx` | The route table + layout (watchlist sidebar + content). Wraps everything in `GeneralContextProvider` so any page can open the trade modal. |
-| `components/WatchList.tsx` | The always-visible sidebar: all 8 coins with live price, 24h %, sparkline; search filter; hover reveals Buy/Sell/Chart actions; doughnut chart compares 24h movement (not raw prices — BTC would dwarf every slice). |
-| `components/Summary.tsx` | The home page: greeting, portfolio value / today's P&L / total return / buying power cards, and the **real** performance chart drawn from portfolio snapshots (1D/1W/1M/ALL). |
-| `components/Orders.tsx` | Order history table: side & status chips (FILLED green, OPEN amber, REJECTED red with reason on hover), fill price, Cancel button on resting orders, 10s auto-refresh so matcher fills appear. |
-| `components/Holdings.tsx` | Positions table with live prices, per-row and total P&L, and a value bar chart; polls quietly every 10s. |
-| `components/Leaderboard.tsx` | Everyone ranked by live portfolio value; your rank highlighted; 🥇🥈🥉 for the podium. |
-| `components/Funds.tsx` | Cash/portfolio/return cards, the paper-trading explainer, and the "Reset account" button (fresh $100k). |
-| `components/MarketDetail.tsx` | `/market/:symbol` — live price header, timeframe tabs (15m/1H/6H/1D), the candlestick chart, Buy/Sell buttons. |
-| `components/GeneralContext.tsx` | Tiny context that lets any component open/close the trade modal. |
-| `components/shared/BuySellModal.tsx` | The order ticket: Buy/Sell tabs, **Market/Limit toggle**, live price that ticks while open, fractional quantities, estimated cost vs your cash, limit price prefilled from the live price, precise success/rejection toasts. |
-| `components/shared/CandleChart.tsx` | The one place `chartjs-chart-financial` is registered — candlesticks in theme colors, dark grid, time axis. Isolated so a library swap touches one file. |
-| `components/shared/DataTable.tsx` | Generic table with loading skeleton + empty states — used by Orders, Holdings, Leaderboard. |
-| `components/shared/Sparkline.tsx` | Small SVG line for watchlist rows; exports `linePath()` which Summary reuses for the big portfolio chart. |
-| `components/shared/PnLValue.tsx`, `StatCard.tsx`, `EmptyState.tsx`, `Skeleton.tsx` | Green/red signed numbers with arrows; stat cards; empty and loading states. |
-| `components/DoughnoutChart.tsx`, `VerticalGraph.tsx` | Chart.js doughnut & bar wrappers. |
-| `*.test.tsx` | Component tests (Holdings, Funds, PnLValue, EmptyState) with axios mocked. |
-| `netlify.toml` | Build + SPA-redirect config for deployment (prepped, not deployed). |
+| `routes/AuthRoute.ts` | `POST /signup`, `/login`, `/logout`, and `POST /` (session check). |
+| `routes/MarketRoute.ts` | Public: `/api/symbols`, `/api/prices`, `/api/stream`, `/api/book/:symbol`, `/api/candles/:symbol` (TTL-cached, serves stale data rather than an error if Gemini fails). |
+| `routes/OrderRoute.ts` | `POST /api/orders`, `GET /api/orders`, `POST /api/orders/:id/cancel`. Auth + per-user rate limit. |
+| `routes/AccountRoute.ts` | `GET /api/holdings`, `GET /api/account`. Auth. |
+| `routes/PortfolioRoute.ts` | `GET /api/portfolio/history` — snapshots downsampled to ≤200 points, cents converted to dollars at the edge. |
+| `controllers/AuthController.ts` | Signup, login, logout. Cookie options, the timing-equalised comparison, and the revocation bump. |
+| `middlewares/AuthMiddleware.ts` | `extractToken`, `verifyToken` (route guard), `userVerification` (session check). |
+| `middlewares/csrf.ts` | The custom-header requirement. |
+| `middlewares/rateLimit.ts` | auth (20/15min per IP), orders (30/min per user), market (60/min per IP), global (300/min per IP). All env-overridable. |
+| `util/money.ts` | All money and quantity maths. |
+| `util/SecretToken.ts` | Signs the 12-hour JWT with the `tv` claim. |
 
-### `frontend/` — the landing site
+**Tests** — `__tests__/`, **216** tests. Most run with the models mocked, so
+they need no database and no network and finish in about three seconds.
 
-`src/landing_page/` contains the marketing pages — `home/` (Hero, Pricing, Stats, Education…), `about/`, `products/`, `pricing/`, `support/` — plus `Navbar`, `Footer`, `OpenAccount`, `NotFound`, and crucially **`signup/Signup.tsx` and `login/Login.tsx`**: they POST to the backend and on success redirect to the dashboard as `dashboard-url/?token=<JWT>` (the cross-origin handoff `Home.tsx` completes). `src/config.ts` holds `API_URL`/`DASHBOARD_URL`. *Note: this app's copy is still stock-broker themed — its crypto rebrand is the next planned piece of work.*
+`persistence.integration.test.ts` and `orderJourney.integration.test.ts` are the
+exceptions and run a real MongoDB via
+`mongodb-memory-server`. It exists because mocked suites are structurally blind
+to anything that is a property of the driver or the server rather than of our
+own logic — three separate bugs here reached a fully passing suite that way (a
+`sparse` compound index that rejected a user's second keyless order, a
+migration whose `$unset` mongoose silently emptied, and a conditional write
+whose filter threw a `CastError` and never executed). It covers the index
+constraints, the conditional order write including concurrent writers, and what
+the database does with non-finite money.
 
-### Repo root
-| File | Purpose |
+`api.test.ts` (auth contract, revocation, token sources, CSRF, enumeration) ·
+`orders.test.ts` (validation matrix, market/limit placement, idempotency and
+its race, cancel, persist-failure handling) · `orderSync.test.ts`
+(reconciliation, active-order batching, lookup cap, balance invalidation) ·
+`geminiPrivate.test.ts` (signing, nonce, sandbox guard, balances cache races) ·
+`priceFeed.test.ts` · `geminiWs.test.ts` · `orderBook.test.ts` ·
+`market.test.ts` · `sse.test.ts` · `snapshots.test.ts` · `money.test.ts` ·
+`userSchema.test.ts` · `hardening.test.ts`.
+
+### `dashboard/` — **43** tests
+
+| File | What it does |
 |---|---|
-| `README.md` | Quick start, feature list, API table, deployment guide. |
-| `docs/PROJECT_GUIDE.md` | This file. |
-| `CLAUDE.md` | Instructions for AI coding tools used on this repo. |
+| `config.ts` | `API_URL`, `LOGIN_URL`, and the axios default that sets the CSRF header on every request. |
+| `types.ts` | Types mirroring the backend schemas. |
+| `index.tsx`, `index.css`, `theme.ts` | Bootstrap and design tokens (dark, red accent, gain/loss colours), mirrored into the MUI theme. |
+| `components/Home.tsx` | Auth shell: asks the backend whether the cookie is still valid, redirects to login if not, and wraps the app in `PricesProvider`. |
+| `components/PricesContext.tsx` | The live-price feed: SSE with polling fallback and the staleness clock. Exposes `{prices, symbols, isStale}`. |
+| `components/TopBar.tsx` | Paper-trading banner, BTC/ETH tickers, Live/Delayed pill. |
+| `components/Menu.tsx` | Nav (Dashboard / Orders / Holdings / Funds), account menu, logout. The account control is a real `<button>` so it is keyboard-reachable — logout is the revocation path. |
+| `components/Dashboard.tsx` | Routes and layout; wraps everything in `GeneralContextProvider` so any page can open the trade modal. |
+| `components/WatchList.tsx` | The sidebar: eight coins with live price and 24h change, search, hover Buy/Sell/Chart actions, and a doughnut comparing 24h movement (not raw prices — BTC would dwarf every slice). |
+| `components/Summary.tsx` | Home: greeting, portfolio value / today's P&L / buying power, and the portfolio chart from real snapshots. Renders "—" rather than "$0.00" for figures it does not have, and draws no chart when there is nothing honest to plot. |
+| `components/Orders.tsx` | Order history. Quantity and price columns key off what actually executed rather than the status label, so a partial fill shows under `PARTIALLY_FILLED`, under a `CANCELLED` order that filled first, and under a resting order that partly crossed. |
+| `components/Holdings.tsx` | Positions and a value bar chart; quiet 10s refresh. Distinguishes "no positions" from "we could not load", both ways. |
+| `components/Funds.tsx` | Cash and portfolio value, and the shared-account explainer. |
+| `components/MarketDetail.tsx` | `/market/:symbol` — price header, timeframe tabs, candlestick chart, live depth, Buy/Sell. |
+| `components/GeneralContext.tsx` | Opens and closes the trade modal from anywhere. |
+| `components/shared/BuySellModal.tsx` | The order ticket: Buy/Sell, Market/Limit, live price, estimated cost, and an idempotency key that is reused across a retry but cleared the moment any order parameter changes. |
+| `components/shared/CandleChart.tsx` | The one place `chartjs-chart-financial` is registered. |
+| `components/shared/DepthPanel.tsx` | Top-of-book depth with quantity bars and the spread; hidden when the book is empty. |
+| `components/shared/DataTable.tsx` | Generic table with loading and empty states. |
+| `components/shared/chartPath.ts` | `linePath()` — values to an SVG path. |
+| `components/shared/PnLValue.tsx`, `StatCard.tsx`, `EmptyState.tsx`, `Skeleton.tsx` | Signed coloured numbers, stat cards, empty and loading states. |
+| `components/DoughnoutChart.tsx`, `VerticalGraph.tsx` | Chart.js wrappers. |
+
+### `frontend/` — **16** tests
+
+`src/landing_page/` holds the marketing pages (`home/`, `about/`, `products/`,
+`pricing/`, `support/`) plus `Navbar`, `Footer`, `NotFound`, `Reveal`
+(scroll-in animation), `LiveTicker` (real prices from `/api/prices`), and the
+`signup/` and `login/` forms. Those post to the backend and, on success,
+redirect to the dashboard — the auth cookie is already set, so nothing is
+passed in the URL. `src/config.ts` holds `API_URL`, `DASHBOARD_URL`, and the
+CSRF axios default.
 
 ---
 
-## 7. Glossary (for readers new to trading)
+## 7. Deployment and the migration
 
-- **Paper trading** — trading with fake money at real prices; a simulator.
-- **Market order** — "buy/sell NOW at whatever the price is." Fills instantly.
-- **Limit order** — "buy only at $X or cheaper / sell only at $Y or higher." Rests in the book until the market crosses your price.
-- **Price-or-better** — a limit order fills at the *market* price at fill time, which is by definition equal to or better than your limit.
-- **Weighted average cost** — buy 1 BTC @ $60k then 1 @ $70k → your avg cost is $65k; profit is measured against that.
-- **Slippage/staleness guard** — we refuse to fill orders when the price cache is older than 30s, so nobody trades on dead data.
-- **P&L** — profit and loss. *Unrealized* = on paper (still holding); *realized* = locked in by selling.
+`render.yaml` deploys the backend as a Render web service (build `npm install &&
+npm run build`, start `npm run serve`, health check `/healthz`). The two React
+apps build to static sites.
+
+**Shutdown.** The process handles `SIGTERM`/`SIGINT`: background timers stop
+first so no new work begins, the HTTP server drains what is already running,
+then the database connection closes, with a 10-second cap so a deploy is never
+held open. SSE streams are ended explicitly — they are held open indefinitely
+by design, and an HTTP server will not finish closing while any remain.
+
+**Domain requirement.** The auth cookie is `sameSite: "lax"`. All three
+services must sit under one registrable domain (`www.` / `app.` / `api.`) or
+the cookie will not be sent and login fails silently with 401s. The alternative
+is `sameSite: "none"` with `secure: true`, which widens CSRF exposure.
+
+### The migration
+
+`migrate()` in `index.ts` runs only when `RUN_MIGRATIONS=true`, because the
+free-tier host restarts constantly and the migration drops collections. It:
+
+1. `$unset`s the removed `balance` / `realizedPnl` fields, **through the raw
+   driver collection**. Through a mongoose Model this silently does nothing:
+   `strict` mode strips paths that are not in the schema from update
+   operators, and those fields were removed from the schemas in the pivot —
+   which is precisely why they are being unset. The update becomes empty, no
+   error is raised, and `modifiedCount` comes back `undefined`.
+2. Drops the legacy `userId_1_clientOrderId_1` index **only if it is actually
+   the legacy one**, so re-running never destroys a healthy index.
+3. Builds the schema's indexes explicitly and awaits them, rather than letting
+   mongoose's background `autoIndex` race the drop. If that race is lost, the
+   `createIndex` fails with `IndexOptionsConflict` — reported on an `index`
+   event nothing listens to — and the drop then leaves the collection with
+   **no uniqueness constraint at all**, silently.
+4. Verifies the partial index is in place afterwards and logs a loud error if
+   it is not.
+5. Drops legacy pre-pivot collections that still exist.
+
+It is idempotent and safe to run against a live database with resting orders:
+every step is conditional on current state, and nothing it touches overlaps
+the fields `orderSync` or the cancel route write.
+
+> A deploy that skips `RUN_MIGRATIONS=true` **looks successful and is not** —
+> the app boots normally on the old, broken index.
+
+### Deploy sequence for the index migration
+
+Run this once. It is the only deploy that needs the flag.
+
+**1 — Migrate.** Set `RUN_MIGRATIONS=true` in the service environment and
+deploy. Expect exactly this in the boot log:
+
+```
+migrate: cleared legacy fields from N user(s) and N order(s)
+migrate: dropped legacy sparse clientOrderId index
+migrate: clientOrderId partial index verified
+app started on port ...
+```
+
+If `migrate: FAILED` appears, stop. Do not clear the flag and do not take
+traffic — order idempotency is not in force.
+
+**2 — Verify the index independently.** Do not rely on the log alone:
+
+```js
+db.orders.getIndexes().find(i => i.name === "userId_1_clientOrderId_1")
+```
+
+It must show `unique: true` **and** `partialFilterExpression: { clientOrderId:
+{ $type: "string" } }`. If it shows `sparse: true`, the migration did not run.
+If it is missing entirely, the collection has no idempotency constraint —
+rebuild it before serving traffic.
+
+**3 — Confirm the behaviour** (optional, on a staging database only — it
+writes rows):
+
+```js
+// two orders with no clientOrderId must both insert
+// two orders with the SAME clientOrderId must reject the second
+```
+
+**4 — Clear the flag.** Unset `RUN_MIGRATIONS` and redeploy, so a restart
+cannot re-run a destructive migration unattended.
+
+**Known window:** between the drop and the rebuild there is a sub-second gap
+with no uniqueness constraint. The migrating instance is not serving yet
+(`migrate()` runs before `app.listen`), so it only matters if another instance
+is live during a rolling deploy. Even then the exposure is a duplicate row,
+not a double trade — Gemini dedupes on `client_order_id` independently.
 
 ---
 
-## 8. Numbers at a glance
+## 8. Environment variables
 
-- **8** tradable pairs · **$100,000** starting balance · **2s** matcher tick · **5s** UI price refresh · **30s** REST fallback poll · **15min** portfolio snapshots
-- **102** backend tests + **12** dashboard tests, all green; both apps compile with strict TypeScript
-- **0** API keys, **0** real dollars, **1** shared Gemini feed no matter how many users
+Required:
+
+| Var | Purpose |
+|---|---|
+| `MONGO_URL` | MongoDB connection string |
+| `TOKEN_KEY` | JWT signing secret. The app refuses to boot if shorter than 32 characters |
+| `GEMINI_API_KEY` / `GEMINI_API_SECRET` | Gemini **sandbox** trading credentials |
+
+Optional:
+
+| Var | Default | Purpose |
+|---|---|---|
+| `NODE_ENV` | — | `production` makes the auth cookie HTTPS-only |
+| `PORT` | 3002 | Listen port |
+| `CORS_ORIGINS` | localhost:3000,3001 | Comma-separated allowed browser origins (whitespace is trimmed) |
+| `RUN_MIGRATIONS` | unset | `true` runs the one-shot destructive migration |
+| `AUTH_RATE_MAX` | 20 | Auth attempts / 15 min / IP |
+| `ORDER_RATE_MAX` | 30 | Orders / min / user |
+| `MARKET_RATE_MAX` | 60 | Public market-data requests / min / IP |
+| `GENERAL_RATE_MAX` | 300 | Requests / min / IP |
+| `MAX_SSE_PER_IP` | 5 | Concurrent price streams per IP |
+| `GEMINI_BALANCES_TTL_MS` | 3000 | Balance cache lifetime |
+| `GEMINI_API_URL` / `GEMINI_WS_URL` | production public API | Public market-data overrides |
+| `GEMINI_PRIVATE_API_URL` | sandbox | Must contain `sandbox` or the app refuses to boot |
+
+Dashboard and frontend read `VITE_API_URL`, `VITE_LOGIN_URL`, and
+`VITE_DASHBOARD_URL` at build time. The old `REACT_APP_*` names are still
+honoured, so an environment configured before the move off Create React App
+keeps working unchanged.
+
+---
+
+## 9. Glossary
+
+- **Paper trading** — trading at real prices without real money at risk. Here
+  the orders are real and the funds are Gemini test funds.
+- **Market order** — buy or sell now at whatever the market offers. Emulated
+  here as an immediate-or-cancel limit priced to cross.
+- **Limit order** — buy at most at $X, or sell at least at $Y. Rests in the
+  book until the market reaches it.
+- **Immediate-or-cancel (IOC)** — fill whatever can fill right now, cancel the
+  rest. This is why a market order can come back partially filled and that is
+  the final outcome, not a pending one.
+- **Partial fill** — some of the order executed. `filledQty` records how much;
+  it is not always `qty`.
+- **Resting order** — an order live on the exchange's book, not yet filled.
+- **Top of book / depth** — the best bid and ask prices and the quantities
+  available at each.
+- **Idempotency key** (`clientOrderId`) — a caller-supplied id that makes a
+  retry safe: the same key never places a second order.
+- **Staleness guard** — orders are refused when the cached price is older than
+  30s, so nobody trades on dead data.
+
+---
+
+## 10. Numbers
+
+- **8** tradable pairs · **12h** JWT lifetime · **30s** staleness guard ·
+  **30s** REST poll · **2s** SSE broadcast · **5s** order reconciliation ·
+  **15min** snapshot sweep · **1%** market-order cross
+- **216** backend + **57** dashboard + **16** frontend tests
+- **1** shared Gemini sandbox account · **1** market-data feed regardless of
+  user count

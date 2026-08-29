@@ -16,6 +16,7 @@ jest.mock("../model/UserModel", () => ({
     findOne: jest.fn(),
     findById: jest.fn(),
     create: jest.fn(),
+    updateOne: jest.fn(),
   },
 }));
 jest.mock("../model/OrdersModel", () => ({
@@ -37,6 +38,7 @@ const mockedUserModel = UserModel as unknown as {
   findOne: jest.Mock;
   findById: jest.Mock;
   create: jest.Mock;
+  updateOne: jest.Mock;
 };
 const mockedGetBalances = getGeminiBalances as jest.Mock;
 
@@ -176,6 +178,37 @@ describe("POST /login", () => {
     expect(res.body.success).toBe(false);
   });
 
+  test("still runs a bcrypt verify when the email doesn't exist", async () => {
+    // Otherwise "no such account" returns as fast as a DB lookup while a wrong
+    // password costs a full bcrypt verify, and that timing gap alone tells an
+    // attacker which addresses are registered. Asserting the mechanism rather
+    // than wall-clock timing, which would be flaky.
+    const compareSpy = jest.spyOn(bcrypt, "compare");
+    mockedUserModel.findOne.mockResolvedValue(null);
+
+    await csrfPost("/login").send({ email: "nobody@b.com", password: "pw" });
+
+    expect(compareSpy).toHaveBeenCalledTimes(1);
+    compareSpy.mockRestore();
+  });
+
+  test("gives the same response for an unknown email and a wrong password", async () => {
+    mockedUserModel.findOne.mockResolvedValue(null);
+    const unknown = await csrfPost("/login").send({ email: "a@b.com", password: "pw" });
+
+    mockedUserModel.findOne.mockResolvedValue({
+      _id: "user-1",
+      email: "a@b.com",
+      username: "alice",
+      password: await bcrypt.hash("right-password", 4),
+      tokenVersion: 0,
+    });
+    const wrongPw = await csrfPost("/login").send({ email: "a@b.com", password: "nope" });
+
+    expect(unknown.status).toBe(wrongPw.status);
+    expect(unknown.body).toEqual(wrongPw.body);
+  });
+
   test("rejects a wrong password with 401", async () => {
     mockedUserModel.findOne.mockResolvedValue({
       _id: "user-1",
@@ -223,9 +256,19 @@ describe("POST / (session check)", () => {
     expect(res.body).toEqual({ status: true, user: "alice" });
   });
 
-  test("accepts the token in the request body (cross-site production flow)", async () => {
+  test("does NOT accept a token from the request body", async () => {
+    // Request bodies land in logs and error reports like query strings do, and
+    // no client ever sent one. Cookie or Bearer header only.
     mockedUserModel.findById.mockResolvedValue(alice);
     const res = await csrfPost("/").send({ token: validToken() });
+    expect(res.body).toEqual({ status: false });
+  });
+
+  test("accepts the token from an Authorization: Bearer header", async () => {
+    mockedUserModel.findById.mockResolvedValue(alice);
+    const res = await csrfPost("/")
+      .set("Authorization", `Bearer ${validToken()}`)
+      .send({});
     expect(res.body).toEqual({ status: true, user: "alice" });
   });
 
@@ -236,6 +279,39 @@ describe("POST / (session check)", () => {
       .set("Cookie", [`token=${validToken()}`])
       .send({});
     expect(res.body).toEqual({ status: false });
+  });
+});
+
+describe("malformed balances from the exchange", () => {
+  test("/api/account fails loudly rather than reporting a null portfolio value", async () => {
+    // JSON cannot encode NaN or Infinity — both serialise to null, so a garbage
+    // balance would quietly render as an empty portfolio rather than an error.
+    mockedUserModel.findById.mockResolvedValue(alice);
+    mockedGetBalances.mockResolvedValue([
+      { currency: "USD", amount: "not-a-number", available: "0", availableForWithdrawal: "0" },
+    ]);
+
+    const res = await request(app)
+      .get("/api/account")
+      .set("Authorization", `Bearer ${validToken()}`);
+
+    expect(res.status).toBe(500);
+    expect(res.body).not.toHaveProperty("portfolioValue");
+  });
+
+  test("/api/holdings drops a non-finite quantity instead of emitting null", async () => {
+    mockedUserModel.findById.mockResolvedValue(alice);
+    mockedGetBalances.mockResolvedValue([
+      { currency: "BTC", amount: "1e999", available: "0", availableForWithdrawal: "0" },
+      { currency: "ETH", amount: "2", available: "2", availableForWithdrawal: "2" },
+    ]);
+
+    const res = await request(app)
+      .get("/api/holdings")
+      .set("Authorization", `Bearer ${validToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.map((h: { symbol: string }) => h.symbol)).toEqual(["ETHUSD"]);
   });
 });
 
@@ -365,6 +441,41 @@ describe("POST /logout", () => {
     expect(res.body.success).toBe(true);
     const setCookie = (res.headers["set-cookie"] as unknown as string[]).join(";");
     // clearCookie sends an already-expired cookie with the same name.
+    expect(setCookie).toMatch(/token=;/);
+  });
+
+  test("revokes the token server-side, not just in the browser", async () => {
+    // Clearing the cookie only asks the browser to forget the token. Bumping
+    // tokenVersion is what invalidates a copy captured before logout — every
+    // request compares the token's tv against the stored value.
+    mockedUserModel.updateOne.mockResolvedValue({ acknowledged: true });
+    const res = await csrfPost("/logout")
+      .set("Cookie", [`token=${validToken()}`])
+      .send({});
+    expect(res.status).toBe(200);
+    expect(mockedUserModel.updateOne).toHaveBeenCalledWith(
+      { _id: "user-1" },
+      { $inc: { tokenVersion: 1 } }
+    );
+  });
+
+  test("still logs out cleanly when the token is expired or forged", async () => {
+    // Nothing to revoke, but the user must not be stranded looking logged in.
+    const res = await csrfPost("/logout")
+      .set("Cookie", ["token=not-a-real-jwt"])
+      .send({});
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(mockedUserModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  test("still clears the cookie when the revocation write fails", async () => {
+    mockedUserModel.updateOne.mockRejectedValue(new Error("db down"));
+    const res = await csrfPost("/logout")
+      .set("Cookie", [`token=${validToken()}`])
+      .send({});
+    expect(res.status).toBe(200);
+    const setCookie = (res.headers["set-cookie"] as unknown as string[]).join(";");
     expect(setCookie).toMatch(/token=;/);
   });
 });

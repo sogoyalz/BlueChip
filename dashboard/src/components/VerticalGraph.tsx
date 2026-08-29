@@ -12,6 +12,9 @@ import {
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 
+import { describeCategoryChart } from "./shared/describeChart";
+import { usd } from "./shared/format";
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -54,5 +57,12 @@ export const options: ChartOptions<"bar"> = {
 };
 
 export function VerticalGraph({ data }: { data: ChartData<"bar"> }) {
-  return <Bar options={options} data={data} />;
+  const description = describeCategoryChart(
+    data,
+    "Holdings by current value",
+    usd,
+  );
+  return (
+    <Bar options={options} data={data} role="img" aria-label={description} />
+  );
 }

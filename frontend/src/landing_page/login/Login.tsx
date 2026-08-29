@@ -23,9 +23,9 @@ function Login() {
       if (data.success) {
         toast.success(data.message);
         setTimeout(() => {
-          // The login response already set the auth cookie (sameSite:none in
-          // production, shared localhost domain in dev), so the dashboard is
-          // authenticated the moment it loads — no token in the URL.
+          // The login response already set the httpOnly auth cookie (its
+          // SameSite mode is the backend's COOKIE_SAMESITE decision), so the
+          // dashboard is authenticated the moment it loads — no token in the URL.
           window.location.href = DASHBOARD_URL;
         }, 1000);
       } else {

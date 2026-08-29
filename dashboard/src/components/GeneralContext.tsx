@@ -6,6 +6,13 @@ import { TradeMode } from "../types";
 interface GeneralContextValue {
   openTradeWindow: (uid: string, mode?: TradeMode) => void;
   closeTradeWindow: () => void;
+  /**
+   * Bumped after every accepted order. Views that list orders depend on it and
+   * refetch, so a new order appears at once instead of after the next 10s poll
+   * — during which it looked like nothing had happened.
+   */
+  orderVersion: number;
+  notifyOrderPlaced: () => void;
   // legacy aliases
   openBuyWindow: (uid: string) => void;
   closeBuyWindow: () => void;
@@ -14,6 +21,8 @@ interface GeneralContextValue {
 const GeneralContext = React.createContext<GeneralContextValue>({
   openTradeWindow: () => {},
   closeTradeWindow: () => {},
+  orderVersion: 0,
+  notifyOrderPlaced: () => {},
   // legacy aliases
   openBuyWindow: () => {},
   closeBuyWindow: () => {},
@@ -26,6 +35,7 @@ interface TradeWindowState {
 
 export const GeneralContextProvider = (props: { children: React.ReactNode }) => {
   const [tradeWindow, setTradeWindow] = useState<TradeWindowState | null>(null);
+  const [orderVersion, setOrderVersion] = useState(0);
 
   const handleOpenTradeWindow = (uid: string, mode: TradeMode = "BUY") => {
     setTradeWindow({ uid, mode });
@@ -40,6 +50,8 @@ export const GeneralContextProvider = (props: { children: React.ReactNode }) => 
       value={{
         openTradeWindow: handleOpenTradeWindow,
         closeTradeWindow: handleCloseTradeWindow,
+        orderVersion,
+        notifyOrderPlaced: () => setOrderVersion((v) => v + 1),
         // legacy aliases kept until all callers migrate
         openBuyWindow: handleOpenTradeWindow,
         closeBuyWindow: handleCloseTradeWindow,

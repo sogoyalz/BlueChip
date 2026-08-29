@@ -68,9 +68,9 @@ const topics = [
 
 function CreateTicket() {
   return (
-    <div className="container section" id="createTicket">
+    <div className="container section" id="helpTopics">
       <h2 className="section-title mb-4">
-        To create a ticket, select a relevant topic
+        Browse help by topic
       </h2>
       <div className="row gy-4">
         {topics.map((topic) => (

@@ -1,12 +1,18 @@
 import axios from "axios";
 
 // Backend origins, overridable per environment (e.g. on Netlify set
-// REACT_APP_API_URL / REACT_APP_DASHBOARD_URL in the build settings).
+// VITE_API_URL / VITE_DASHBOARD_URL in the build settings).
+//
+// The REACT_APP_* names are still honoured so an environment configured before
+// the move off Create React App keeps working — vite.config.ts exposes that
+// prefix too. Prefer the VITE_ names for anything new.
+const env = import.meta.env;
+
 export const API_URL =
-  process.env.REACT_APP_API_URL || "http://localhost:3002";
+  env.VITE_API_URL || env.REACT_APP_API_URL || "http://localhost:3002";
 
 export const DASHBOARD_URL =
-  process.env.REACT_APP_DASHBOARD_URL || "http://localhost:3001";
+  env.VITE_DASHBOARD_URL || env.REACT_APP_DASHBOARD_URL || "http://localhost:3001";
 
 // CSRF: the backend requires this custom header on every state-changing
 // request. A browser only lets same-origin/CORS-permitted JS set it, so a

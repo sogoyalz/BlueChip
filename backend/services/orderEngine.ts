@@ -9,8 +9,9 @@ import { isSupported } from "../config/symbols";
 import { getPrice, isFresh } from "./priceFeed";
 import { placeGeminiOrder, cancelGeminiOrder, clearBalancesCache } from "./geminiPrivate";
 import { snapshotNow } from "./snapshots";
-import { MAX_NOTIONAL, MAX_QTY, roundQty, roundUsd } from "../util/money";
+import { MAX_NOTIONAL, MAX_QTY, exchangeAmount, roundQty, roundUsd } from "../util/money";
 import { IOrder, OrderSide, OrderType } from "../schemas/OrdersSchema";
+import { log, alert } from "../util/logger";
 
 // A MARKET order is emulated as an immediate-or-cancel limit order priced
 // to cross the book: a BUY bids above the ask, a SELL offers below the bid.
@@ -135,11 +136,44 @@ export async function placeOrder(
       // past our findOne can't double-fill on the exchange.
     });
   } catch (err) {
-    console.error("Gemini order placement failed:", err);
+    // A timeout is NOT a rejection. The request may have reached Gemini and
+    // been accepted; we simply never heard back. Reporting that as "could not
+    // be placed" tells the user something we do not know, and if they retry
+    // without an idempotency key they can place it a second time for real.
+    if ((err as Error).name === "TimeoutError") {
+      alert("orders.place_timeout", {
+        userId: String(userId),
+        symbol,
+        side,
+        qty,
+        clientOrderId,
+        // Whether a retry is safe hinges entirely on this: with a key, Gemini
+        // dedupes and our unique index refuses a second row. Without one,
+        // retrying risks a duplicate order on the exchange.
+        retrySafe: Boolean(clientOrderId),
+        err: err as Error,
+      });
+      throw new OrderError(
+        504,
+        clientOrderId
+          ? "Timed out waiting for the exchange. Your order may still have been placed — retrying with the same request is safe."
+          : "Timed out waiting for the exchange. Your order may still have been placed — check your orders before trying again."
+      );
+    }
+    log.error("orders.place_rejected", {
+      userId: String(userId),
+      symbol,
+      side,
+      qty,
+      err: err as Error,
+    });
     throw new OrderError(502, "Order could not be placed on the exchange");
   }
 
-  const executed = Number(geminiResult.executed_amount);
+  const executed = exchangeAmount(geminiResult.executed_amount);
+  // remaining stays a raw Number() on purpose: NaN === 0 is false, so an
+  // unparseable remaining can never satisfy the FILLED test below — which is
+  // the safe direction, since FILLED is terminal and never re-reconciled.
   const remaining = Number(geminiResult.remaining_amount);
   const status =
     executed === 0
@@ -161,6 +195,7 @@ export async function placeOrder(
       type,
       status,
       qty,
+      filledQty: executed > 0 ? executed : undefined,
       limitPrice: type === "LIMIT" ? limitPrice : undefined,
       geminiOrderId: geminiResult.order_id,
       clientOrderId,
@@ -178,6 +213,29 @@ export async function placeOrder(
       const existing = await OrdersModel.findOne({ userId, clientOrderId });
       if (existing) return existing;
     }
+    // Anything else means the order is LIVE ON THE EXCHANGE but we failed to
+    // record it — balances have moved and nothing local knows about it. Log the
+    // exchange's own id loudly so it can be reconciled by hand; the caller
+    // still gets an error rather than a false success.
+    // The one condition nothing else can reconcile: money moved on the
+    // exchange and we have no record of it. This is what monitoring is for.
+    alert("orders.orphaned_fill", {
+      geminiOrderId: geminiResult.order_id,
+      userId: String(userId),
+      symbol,
+      side,
+      qty,
+      executed,
+      err: err as Error,
+    });
+    if (executed > 0) {
+      // The trade happened regardless of our write failing. Leaving the cached
+      // balance in place would serve a figure we already know is wrong to every
+      // /api/account and /api/holdings read until the TTL expires, and the
+      // snapshot series would skip the move entirely.
+      clearBalancesCache();
+      void snapshotNow();
+    }
     throw err;
   }
 
@@ -194,15 +252,20 @@ export async function placeOrder(
 /** Cancel a resting order: Gemini is the source of truth, cancelled first. */
 export async function cancelOrder(
   geminiOrderId: string
-): Promise<{ status: "CANCELLED" | "FILLED"; fillPrice?: number }> {
+): Promise<{ status: "CANCELLED" | "FILLED"; fillPrice?: number; filledQty?: number }> {
   const result = await cancelGeminiOrder(geminiOrderId);
-  const executed = Number(result.executed_amount);
+  const executed = exchangeAmount(result.executed_amount);
   if (result.is_cancelled) {
     return {
       status: "CANCELLED",
       fillPrice: executed > 0 ? Number(result.avg_execution_price) : undefined,
+      filledQty: executed > 0 ? executed : undefined,
     };
   }
   // Filled before the cancel reached Gemini.
-  return { status: "FILLED", fillPrice: Number(result.avg_execution_price) };
+  return {
+    status: "FILLED",
+    fillPrice: Number(result.avg_execution_price),
+    filledQty: executed > 0 ? executed : undefined,
+  };
 }

@@ -14,7 +14,7 @@ import {
 
 import { SymbolInfo, TickerPrice } from "../types";
 import { DoughnutChart } from "./DoughnoutChart";
-import Sparkline from "./shared/Sparkline";
+import { price } from "./shared/format";
 
 // Brand ramp: accent reds first, then warm/neutral steps that stay legible on
 // the dark surface; entries beyond the eight slots fold to a muted gray.
@@ -30,10 +30,6 @@ const CATEGORICAL = [
 ];
 const sliceColor = (i: number) => (i < CATEGORICAL.length ? CATEGORICAL[i] : "#4a4a4a");
 
-const fmtPrice = (n: number) =>
-  n >= 1000
-    ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    : n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
 const WatchList = () => {
   const { prices, symbols } = usePrices();
@@ -105,38 +101,36 @@ const WatchListItem = ({
   info: SymbolInfo;
   tick?: TickerPrice;
 }) => {
-  const [showWatchlistActions, setShowWatchlistActions] = useState(false);
-
   const isDown = (tick?.changePct24h ?? 0) < 0;
   const pct = tick ? `${tick.changePct24h >= 0 ? "+" : ""}${tick.changePct24h.toFixed(2)}%` : "—";
 
   return (
-    <li
-      onMouseEnter={() => setShowWatchlistActions(true)}
-      onMouseLeave={() => setShowWatchlistActions(false)}
-    >
+    <li>
       <div className="item">
         <div className="item-symbol">
           <div className="symbol-badge">{info.base.slice(0, 3)}</div>
           <p className="symbol-name">{info.base}</p>
         </div>
         <div className="item-info">
-          <Sparkline seed={info.symbol} trend={isDown ? "down" : "up"} />
           <span className={`percent ${isDown ? "down" : "up"}`}>{pct}</span>
           {isDown ? (
             <KeyboardArrowDown className="down" />
           ) : (
             <KeyboardArrowUp className="up" />
           )}
-          <span className="price">{tick ? fmtPrice(tick.price) : "…"}</span>
+          <span className="price">{tick ? price(tick.price) : "…"}</span>
         </div>
       </div>
-      {showWatchlistActions && <WatchListActions symbol={info.symbol} />}
+      {/* Always rendered. Mounting these on mouseenter meant they never
+          existed on a touch device (a tap fires no mouseenter) and could never
+          be tabbed to. The hover reveal is now purely a fine-pointer refinement
+          in CSS. */}
+      <WatchListActions symbol={info.symbol} base={info.base} />
     </li>
   );
 };
 
-const WatchListActions = ({ symbol }: { symbol: string }) => {
+const WatchListActions = ({ symbol, base }: { symbol: string; base: string }) => {
   const generalContext = useContext(GeneralContext);
   const navigate = useNavigate();
 
@@ -144,7 +138,7 @@ const WatchListActions = ({ symbol }: { symbol: string }) => {
     <span className="actions">
       <span>
         <Tooltip
-          title="Buy (B)"
+          title={`Buy ${base}`}
           placement="top"
           arrow
           slots={{ transition: Grow }}
@@ -157,7 +151,7 @@ const WatchListActions = ({ symbol }: { symbol: string }) => {
           </button>
         </Tooltip>
         <Tooltip
-          title="Sell (S)"
+          title="Sell"
           placement="top"
           arrow
           slots={{ transition: Grow }}
@@ -170,12 +164,16 @@ const WatchListActions = ({ symbol }: { symbol: string }) => {
           </button>
         </Tooltip>
         <Tooltip
-          title="Chart (A)"
+          title="Chart"
           placement="top"
           arrow
           slots={{ transition: Grow }}
         >
-          <button className="action" onClick={() => navigate(`/market/${symbol}`)}>
+          <button
+            className="action"
+            aria-label={`${base} chart`}
+            onClick={() => navigate(`/market/${symbol}`)}
+          >
             <BarChartOutlined className="icon" />
           </button>
         </Tooltip>

@@ -2,36 +2,25 @@ import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
-// react-router-dom v7 ships as exports-only ESM, which CRA's (frozen) Jest
-// resolver cannot load. We only use <Link> here, so mock it with a plain <a>.
-jest.mock(
-  "react-router-dom",
-  () => ({
-    Link: ({ to, children, ...props }: { to: string; children?: React.ReactNode }) => (
-      <a href={to} {...props}>
-        {children}
-      </a>
-    ),
-  }),
-  { virtual: true }
-);
 
-jest.mock("axios", () => ({
+vi.mock("axios", () => ({
   __esModule: true,
-  default: { post: jest.fn() },
+  default: { post: vi.fn() },
 }));
 
-jest.mock("react-toastify", () => ({
+vi.mock("react-toastify", () => ({
   ToastContainer: () => null,
-  toast: { error: jest.fn(), success: jest.fn() },
+  toast: { error: vi.fn(), success: vi.fn() },
 }));
 
 import axios from "axios";
 import { toast } from "react-toastify";
 import Login from "../login/Login";
+import type { Mock } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 
-const mockedPost = axios.post as jest.Mock;
-const mockedToastError = toast.error as unknown as jest.Mock;
+const mockedPost = axios.post as Mock;
+const mockedToastError = toast.error as unknown as Mock;
 
 const fillAndSubmit = () => {
   fireEvent.change(screen.getByLabelText(/email/i), {
@@ -45,14 +34,18 @@ const fillAndSubmit = () => {
 
 describe("Login", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test("posts the entered credentials and shows a failed-login message", async () => {
     mockedPost.mockResolvedValue({
       data: { success: false, message: "Incorrect password or email" },
     });
-    render(<Login />);
+    render(
+            <MemoryRouter>
+                <Login />
+            </MemoryRouter>,
+        );
     fillAndSubmit();
 
     await waitFor(() =>
@@ -69,7 +62,11 @@ describe("Login", () => {
     mockedPost.mockRejectedValue({
       response: { data: { message: "All fields are required" } },
     });
-    render(<Login />);
+    render(
+            <MemoryRouter>
+                <Login />
+            </MemoryRouter>,
+        );
     fillAndSubmit();
 
     await waitFor(() =>

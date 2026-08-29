@@ -13,6 +13,15 @@ export type OrderStatus =
 // Legacy alias — BuySellModal and GeneralContext predate the side/type split.
 export type TradeMode = OrderSide;
 
+/**
+ * Still live on the exchange's book — the statuses a Cancel makes sense for.
+ * PARTIALLY_FILLED counts: a resting limit that partly crossed keeps its
+ * remainder on the book. Mirrors RESTING_STATUSES in backend/services/
+ * orderState.ts.
+ */
+export const isResting = (status: OrderStatus): boolean =>
+  status === "OPEN" || status === "PARTIALLY_FILLED";
+
 // The shared Gemini sandbox account's holding in one asset — no per-user
 // cost basis, since every user trades against the same account.
 export interface Holding {
@@ -29,7 +38,8 @@ export interface Order {
   side: OrderSide;
   type: OrderType;
   status: OrderStatus;
-  qty: number;
+  qty: number; // requested amount
+  filledQty?: number; // executed amount — less than qty on a partial fill
   limitPrice?: number;
   fillPrice?: number;
   geminiOrderId?: string;

@@ -9,10 +9,19 @@
 
   --ink: #f5f5f5;
   --ink-2: #a3a3a8;
-  --ink-3: #6b6b70;
+  /* Was #6b6b70, which measured 3.1–3.7:1 on these grounds — under the
+     4.5:1 AA needs for text this size. Now 5.3–6.3:1. Matches the dashboard's
+     token so the two apps stay in step. */
+  --ink-3: #8b93a1;
 
   --accent: #e50914;
-  --accent-hover: #ff1f2e;
+  /* Hover DARKENS rather than lightens. A lighter red cannot carry legible
+     text: white on the old #ff1f2e measured 3.8:1, and no text colour clears
+     4.5:1 against it. */
+  --accent-hover: #c8101c;
+  /* Filled accent buttons only. --ink (#f5f5f5) on --accent measures 4.4:1,
+     just under AA; pure white makes it 4.8:1. */
+  --ink-on-accent: #ffffff;
   --accent-soft: rgba(229, 9, 20, 0.08);
 
   --gain: #00c853;
@@ -155,14 +164,14 @@ a:focus-visible {
 .btn-auth {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--ink);
+  color: var(--ink-on-accent);
 }
 
 .btn-primary:hover:not(:disabled),
 .btn-auth:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
-  color: var(--ink);
+  color: var(--ink-on-accent);
 }
 
 .btn-primary:active,
@@ -171,7 +180,7 @@ a:focus-visible {
 .btn-auth:focus {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--ink);
+  color: var(--ink-on-accent);
 }
 
 .btn-outline-primary {
@@ -183,7 +192,7 @@ a:focus-visible {
 .btn-outline-primary:focus {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--ink);
+  color: var(--ink-on-accent);
 }
 
 .nav-link {
@@ -557,6 +566,53 @@ select:focus-visible {
 
 .hero-media {
   max-width: 900px;
+}
+
+/* About — factual band under the statement, and column headings, so the page
+   has structure instead of two slabs of prose. */
+.about-facts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-4, 16px);
+  padding: var(--sp-6, 32px) 0;
+}
+
+.about-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 16px;
+  border-left: 2px solid var(--border);
+}
+
+.about-fact-value {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.about-fact-label {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+.prose-heading {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: var(--sp-4, 16px);
+}
+
+@media (max-width: 767px) {
+  .about-facts {
+    grid-template-columns: repeat(2, 1fr);
+    row-gap: var(--sp-5, 24px);
+  }
 }
 
 .about-statement {

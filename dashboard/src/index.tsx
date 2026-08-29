@@ -14,7 +14,16 @@ root.render(
     <ThemeProvider theme={theme}>
       <BrowserRouter>
         <Home />
-        <ToastContainer position="top-right" autoClose={2500} />
+        {/* bottom-center on narrow screens: top-right spans the full width on a
+          phone and covered the page heading and first stat card. */}
+      <ToastContainer
+        position={
+          typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches
+            ? "bottom-center"
+            : "top-right"
+        }
+        autoClose={2500}
+      />
       </BrowserRouter>
     </ThemeProvider>
   </React.StrictMode>

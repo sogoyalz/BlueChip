@@ -53,7 +53,7 @@
 }
 
 .mode-tab.active.buy {
-  color: var(--accent);
+  color: var(--accent-ink);
   background: var(--accent-soft);
   border-color: var(--accent);
 }

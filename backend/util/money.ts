@@ -26,9 +26,35 @@ export function roundQty(n: number): number {
 // the edge. (Order *prices* — limitPrice/fillPrice — stay decimal: they mirror
 // Gemini's own decimal price model and are the exchange's to be the ledger of.)
 export function toCents(usd: number): number {
+  // Amounts and prices arrive from the exchange as strings and reach here via
+  // Number(). "abc" becomes NaN, "1e999" becomes Infinity, and either one
+  // poisons whatever total it lands in. Checked against a real database:
+  // mongoose rejects a NaN valueCents (so the snapshot is dropped silently and
+  // portfolio history simply stops growing) while Infinity is ACCEPTED and
+  // persisted — and `typeof Infinity === "number"`, so a guard written to skip
+  // bad points lets it through to the chart, permanently. Refuse it here, at
+  // the one place every stored total passes through.
+  if (!Number.isFinite(usd)) {
+    throw new RangeError(`toCents received a non-finite value: ${usd}`);
+  }
   return Math.round(usd * 100);
 }
 
 export function fromCents(cents: number): number {
   return cents / 100;
+}
+
+/**
+ * An EXECUTED amount reported by the exchange, defensively. Gemini sends
+ * amounts as strings; Number("garbage") is NaN, and NaN slips past both the
+ * `=== 0` and the `> 0` test, landing the order in a status that matches
+ * neither. Treating non-finite as 0 means "no fill observed", which is
+ * non-terminal — orderSync reconciles the truth on its next pass.
+ *
+ * Do NOT use this for remaining_amount: collapsing an unparseable remaining
+ * to 0 would satisfy the FILLED test, and FILLED is terminal.
+ */
+export function exchangeAmount(raw: unknown): number {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
 }

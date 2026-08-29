@@ -19,6 +19,11 @@ if (!PRIVATE_BASE.includes("sandbox")) {
   );
 }
 
+// Same bound as the public client. An order placement that never returns is
+// worse than one that fails: the caller cannot tell whether it reached the
+// exchange, and nothing else will reconcile it.
+const REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 8_000;
+
 const API_KEY = process.env.GEMINI_API_KEY;
 const API_SECRET = process.env.GEMINI_API_SECRET;
 
@@ -58,7 +63,19 @@ function nextNonce(): number {
   return nonce;
 }
 
-async function geminiPrivatePost<T>(
+/**
+ * Carries the HTTP status so the retry policy can tell a transient failure
+ * from a refusal. The message is unchanged from before this class existed.
+ */
+class GeminiHttpError extends Error {
+  constructor(readonly status: number, path: string) {
+    super(`Gemini ${path} responded ${status}`);
+    this.name = "GeminiHttpError";
+  }
+}
+
+/** One signed attempt. Every call mints a new nonce — Gemini rejects reuse. */
+async function signedPost<T>(
   path: string,
   params: Record<string, unknown> = {}
 ): Promise<T> {
@@ -84,11 +101,57 @@ async function geminiPrivatePost<T>(
       "X-GEMINI-SIGNATURE": signature,
       Accept: "application/json",
     },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
-    throw new Error(`Gemini ${path} responded ${res.status}`);
+    throw new GeminiHttpError(res.status, path);
   }
   return (await res.json()) as T;
+}
+
+const RETRY_DELAY_MS = 250;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A signed request, optionally retried.
+ *
+ * `retries` is opt-in and deliberately stays at 0 for /v1/order/new and
+ * /v1/order/cancel: repeating a write risks a second fill, and the idempotency
+ * key plus a clear 504 is the right answer there instead. The read paths carry
+ * no such risk — a balance or order-status fetch that fails on a transient
+ * blip currently surfaces to the user as a 500 for no good reason.
+ *
+ * Each attempt re-signs from scratch, because the nonce cannot be reused.
+ *
+ * A timeout is NOT retried, even on a read. /v1/balances backs /api/account
+ * and /api/holdings and coalesces concurrent callers onto one request, so a
+ * second 8-second attempt would hold every waiting caller for sixteen seconds
+ * to chase a call that has already proven slow. Retrying is for failures that
+ * come back fast — a 5xx, a refused connection — where the second attempt
+ * costs almost nothing.
+ */
+async function geminiPrivatePost<T>(
+  path: string,
+  params: Record<string, unknown> = {},
+  { retries = 0 }: { retries?: number } = {}
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await signedPost<T>(path, params);
+    } catch (err) {
+      lastErr = err;
+      // A 4xx is a decision, not a blip. Repeating it changes nothing and
+      // burns a nonce.
+      const status = err instanceof GeminiHttpError ? err.status : undefined;
+      if (status !== undefined && status < 500) throw err;
+      // See above: a retry must be cheap, and a second timeout is not.
+      if ((err as Error)?.name === "TimeoutError") throw err;
+      if (attempt >= retries) break;
+      await sleep(RETRY_DELAY_MS);
+    }
+  }
+  throw lastErr;
 }
 
 export interface PlaceGeminiOrderInput {
@@ -122,12 +185,23 @@ export async function cancelGeminiOrder(
   });
 }
 
+/**
+ * Every order still live on the shared account's book, in ONE request.
+ * Orders that have filled or been cancelled simply aren't in the response —
+ * that absence is what tells orderSync which orders need an individual lookup.
+ */
+export async function getGeminiActiveOrders(): Promise<GeminiOrderResponse[]> {
+  return geminiPrivatePost<GeminiOrderResponse[]>("/v1/orders", {}, { retries: 1 });
+}
+
 export async function getGeminiOrderStatus(
   orderId: string
 ): Promise<GeminiOrderResponse> {
-  return geminiPrivatePost<GeminiOrderResponse>("/v1/order/status", {
-    order_id: orderId,
-  });
+  return geminiPrivatePost<GeminiOrderResponse>(
+    "/v1/order/status",
+    { order_id: orderId },
+    { retries: 1 },
+  );
 }
 
 // Balances change only when an order fills, but /api/account and /api/holdings
@@ -137,25 +211,38 @@ export async function getGeminiOrderStatus(
 const BALANCES_TTL_MS = Number(process.env.GEMINI_BALANCES_TTL_MS) || 3_000;
 let balancesCache: { data: GeminiBalance[]; fetchedAt: number } | null = null;
 let balancesInFlight: Promise<GeminiBalance[]> | null = null;
+// Bumped by every invalidation. A fetch that was already in flight when the
+// cache was cleared carries pre-fill balances, so it must not publish them as
+// current — it compares the generation it started in before caching.
+let balancesGeneration = 0;
 
 export async function getGeminiBalances(): Promise<GeminiBalance[]> {
   if (balancesCache && Date.now() - balancesCache.fetchedAt < BALANCES_TTL_MS) {
     return balancesCache.data;
   }
   if (balancesInFlight) return balancesInFlight; // fold into the in-flight fetch
-  balancesInFlight = geminiPrivatePost<GeminiBalance[]>("/v1/balances")
+  const gen = balancesGeneration;
+  let inFlight: Promise<GeminiBalance[]>;
+  inFlight = geminiPrivatePost<GeminiBalance[]>("/v1/balances", {}, { retries: 1 })
     .then((data) => {
-      balancesCache = { data, fetchedAt: Date.now() };
+      // Stale by the time it landed (a fill cleared the cache meanwhile) —
+      // hand the data to this caller but don't cache it.
+      if (gen === balancesGeneration) {
+        balancesCache = { data, fetchedAt: Date.now() };
+      }
       return data;
     })
     .finally(() => {
-      balancesInFlight = null;
+      // Only clear the slot if it's still ours; a newer fetch may have claimed it.
+      if (balancesInFlight === inFlight) balancesInFlight = null;
     });
-  return balancesInFlight;
+  balancesInFlight = inFlight;
+  return inFlight;
 }
 
-/** Test helper: drop the cached balances so a test starts from a clean slate. */
+/** Invalidate the cached balances (a fill changed them) — also used by tests. */
 export function clearBalancesCache(): void {
+  balancesGeneration += 1;
   balancesCache = null;
   balancesInFlight = null;
 }

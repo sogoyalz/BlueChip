@@ -7,7 +7,10 @@ function Navbar() {
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
     handleScroll();
-    window.addEventListener("scroll", handleScroll);
+    // passive: the handler never calls preventDefault, and saying so lets the
+    // browser scroll without first waiting to find out. A non-passive scroll
+    // listener on the root is a classic source of scroll jank.
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
