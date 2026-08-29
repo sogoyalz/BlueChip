@@ -144,6 +144,37 @@ describe("BuySellModal submit outcomes", () => {
     expect(mockedToastInfo).toHaveBeenCalledWith(expect.stringContaining("Limit buy placed"));
   });
 
+  test("an OPEN limit that partly crossed reports what already traded", async () => {
+    // placeOrder returns OPEN (not PARTIALLY_FILLED) for a limit order that
+    // partly crossed on the way in — the remainder is resting, but 0.4 has
+    // already traded. Announcing only the requested 1.0 would tell the user
+    // nothing executed, the same falsehood the orders table avoids.
+    mockedPost.mockResolvedValue({
+      data: {
+        order: {
+          status: "OPEN",
+          qty: 1,
+          filledQty: 0.4,
+          fillPrice: 44900,
+          limitPrice: 45000,
+        },
+      },
+    });
+    renderModal();
+    await screen.findByText(/Cash/);
+    fireEvent.click(screen.getByRole("tab", { name: /limit/i }));
+    enterQty("1");
+    enterLimitPrice("45000");
+    clickBuy();
+
+    await waitFor(() => expect(mockedToastInfo).toHaveBeenCalled());
+    const message = mockedToastInfo.mock.calls.at(-1)![0] as string;
+    expect(message).toContain("0.4 of 1");
+    expect(message).toContain("$44,900.00");
+    expect(message).toContain("resting");
+    expect(message).not.toContain("Limit buy placed");
+  });
+
   test("a PARTIALLY_FILLED response is reported as a fill, not a rejection", async () => {
     // A market order is immediate-or-cancel, so a partial fill is the final
     // outcome — the user really did buy 0.4 BTC and must not be told otherwise.

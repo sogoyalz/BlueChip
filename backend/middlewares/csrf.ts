@@ -6,9 +6,13 @@
 // HTML form or top-level navigation cannot. Sending a custom header also forces
 // a CORS preflight, which our origin allowlist then rejects for other sites.
 //
-// This is layered on top of sameSite:"lax" on the auth cookie; either alone
-// blocks the classic vectors, together they cover each other's edges. Both
-// frontends set this header as an axios default (see their config).
+// This layers with the auth cookie's SameSite attribute, but does not depend
+// on it: COOKIE_SAMESITE is a deployment setting, and a split-domain deploy
+// runs it as "none", where SameSite contributes nothing. The header check is
+// therefore unconditional and is the defense that must hold on its own —
+// which it does, since a cross-site page cannot set a custom header without a
+// preflight the origin allowlist rejects. Both frontends set the header as an
+// axios default (see their config).
 
 import { Request, Response, NextFunction } from "express";
 

@@ -125,8 +125,17 @@ export function useOrderTicket(uid: string, initialMode: TradeMode) {
         );
         generalContext.closeTradeWindow();
       } else if (order.status === "OPEN") {
+        // A limit order that partly crossed on the way in comes back OPEN with
+        // a filledQty: the remainder is resting, but part of it has already
+        // traded. Reporting only the requested quantity would say nothing
+        // executed, which is the same falsehood the orders table takes care to
+        // avoid.
+        const alreadyFilled = order.filledQty ?? 0;
         toast.info(
-          `Limit ${mode.toLowerCase()} placed: ${order.qty} ${base} @ ${usd(order.limitPrice!)}`
+          alreadyFilled > 0
+            ? `Limit ${mode.toLowerCase()}: ${alreadyFilled} of ${order.qty} ${base} ` +
+              `filled at ${usd(order.fillPrice!)}, the rest resting @ ${usd(order.limitPrice!)}`
+            : `Limit ${mode.toLowerCase()} placed: ${order.qty} ${base} @ ${usd(order.limitPrice!)}`
         );
         generalContext.closeTradeWindow();
       } else {
