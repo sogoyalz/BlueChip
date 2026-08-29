@@ -58,3 +58,16 @@ export function exchangeAmount(raw: unknown): number {
   const n = Number(raw);
   return Number.isFinite(n) ? n : 0;
 }
+
+/**
+ * A price read off an exchange response, or undefined when it is unreadable.
+ *
+ * Distinct from exchangeAmount, which collapses a bad AMOUNT to 0 because zero
+ * is a meaningful, non-terminal quantity. There is no safe stand-in for a
+ * price: 0 would claim the trade executed for nothing, so the only honest
+ * answer is that we do not have one.
+ */
+export function exchangePrice(raw: unknown): number | undefined {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}

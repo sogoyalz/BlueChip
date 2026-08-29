@@ -9,7 +9,7 @@ import { isSupported } from "../config/symbols";
 import { getPrice, isFresh } from "./priceFeed";
 import { placeGeminiOrder, cancelGeminiOrder, clearBalancesCache } from "./geminiPrivate";
 import { snapshotNow } from "./snapshots";
-import { MAX_NOTIONAL, MAX_QTY, exchangeAmount, roundQty, roundUsd } from "../util/money";
+import { MAX_NOTIONAL, MAX_QTY, exchangeAmount, exchangePrice, roundQty, roundUsd } from "../util/money";
 import { IOrder, OrderSide, OrderType } from "../schemas/OrdersSchema";
 import { log, alert } from "../util/logger";
 
@@ -199,7 +199,12 @@ export async function placeOrder(
       limitPrice: type === "LIMIT" ? limitPrice : undefined,
       geminiOrderId: geminiResult.order_id,
       clientOrderId,
-      fillPrice: executed > 0 ? Number(geminiResult.avg_execution_price) : undefined,
+      // exchangePrice, not Number(): a malformed avg_execution_price is NaN,
+      // which mongoose refuses with a CastError — and a failed create here
+      // means the order is LIVE on the exchange with no local record, the
+      // orphaned-fill path. Losing the whole order over an unreadable price on
+      // a fill we otherwise know everything about is the wrong trade.
+      fillPrice: executed > 0 ? exchangePrice(geminiResult.avg_execution_price) : undefined,
       filledAt: executed > 0 ? new Date() : undefined,
       reason:
         status === "REJECTED" ? "Order did not fill (immediate-or-cancel)" : undefined,
@@ -258,14 +263,14 @@ export async function cancelOrder(
   if (result.is_cancelled) {
     return {
       status: "CANCELLED",
-      fillPrice: executed > 0 ? Number(result.avg_execution_price) : undefined,
+      fillPrice: executed > 0 ? exchangePrice(result.avg_execution_price) : undefined,
       filledQty: executed > 0 ? executed : undefined,
     };
   }
   // Filled before the cancel reached Gemini.
   return {
     status: "FILLED",
-    fillPrice: Number(result.avg_execution_price),
+    fillPrice: exchangePrice(result.avg_execution_price),
     filledQty: executed > 0 ? executed : undefined,
   };
 }

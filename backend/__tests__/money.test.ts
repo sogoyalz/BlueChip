@@ -1,4 +1,4 @@
-import { QTY_EPSILON, exchangeAmount, fromCents, roundQty, roundUsd, toCents } from "../util/money";
+import { QTY_EPSILON, exchangeAmount, exchangePrice, fromCents, roundQty, roundUsd, toCents } from "../util/money";
 
 describe("roundUsd", () => {
   test("rounds to 2 decimal places", () => {
@@ -108,5 +108,32 @@ describe("exchangeAmount", () => {
     // The safety argument for choosing 0: an order recorded as unfilled stays
     // reconcilable, whereas anything implying a complete fill would be final.
     expect(exchangeAmount("garbage")).toBe(0);
+  });
+});
+
+
+describe("exchangePrice", () => {
+  test("passes a real price through", () => {
+    expect(exchangePrice("50000.25")).toBe(50000.25);
+    expect(exchangePrice(0.0899)).toBe(0.0899);
+  });
+
+  test("returns undefined for anything unreadable", () => {
+    // Deliberately NOT 0, unlike exchangeAmount. Zero is a meaningful quantity
+    // — "nothing executed" — but as a price it would claim the trade happened
+    // for free. The only honest answer is that we do not have one.
+    for (const bad of ["", "abc", undefined, null, {}, "1e999", Infinity, NaN]) {
+      expect(exchangePrice(bad)).toBeUndefined();
+    }
+  });
+
+  test("rejects zero and negatives", () => {
+    expect(exchangePrice("0")).toBeUndefined();
+    expect(exchangePrice(-5)).toBeUndefined();
+  });
+
+  test("differs from exchangeAmount exactly where it should", () => {
+    expect(exchangeAmount("garbage")).toBe(0);
+    expect(exchangePrice("garbage")).toBeUndefined();
   });
 });

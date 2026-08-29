@@ -550,6 +550,31 @@ describe("POST /api/orders/:id/cancel", () => {
     expect(mockedOrders.findOneAndUpdate).toHaveBeenCalled();
   });
 
+  test("a fill with an unreadable price is still recorded", async () => {
+    // A malformed avg_execution_price is NaN, which mongoose refuses with a
+    // CastError. At creation that meant the order was LIVE on the exchange
+    // with no local record — the orphaned-fill path — over a price we could
+    // not read on a fill we otherwise knew everything about.
+    mockedOrders.findOne.mockResolvedValue(null);
+    mockedPlaceGeminiOrder.mockResolvedValue(
+      geminiFill({ executed_amount: "1", remaining_amount: "0", avg_execution_price: "n/a" })
+    );
+    mockedOrders.create.mockImplementation(async (doc: Record<string, unknown>) => doc);
+
+    const res = await request(app)
+      .post("/api/orders")
+      .set("Authorization", `Bearer ${token()}`)
+      .set("X-Requested-With", "XMLHttpRequest")
+      .send({ symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 1 });
+
+    expect(res.status).toBe(201);
+    const created = mockedOrders.create.mock.calls.at(-1)![0];
+    expect(created.status).toBe("FILLED");
+    expect(created.filledQty).toBe(1);
+    // Absent, not NaN and not a fabricated zero.
+    expect(created.fillPrice).toBeUndefined();
+  });
+
   test("returns 404 (not 500) for a malformed order id", async () => {
     const res = await request(app)
       .post("/api/orders/not-an-objectid/cancel")

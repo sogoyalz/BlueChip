@@ -27,8 +27,6 @@ export interface TickerV2 {
   symbol: string;
   open: number;
   close: number;
-  bid: number;
-  ask: number;
   changePct24h: number;
 }
 
@@ -57,8 +55,6 @@ export async function fetchTickerV2(symbol: string): Promise<TickerV2> {
     symbol: string;
     open: string;
     close: string;
-    bid: string;
-    ask: string;
   }>(`/v2/ticker/${symbol.toLowerCase()}`);
   const open = Number(raw.open);
   const close = Number(raw.close);
@@ -66,8 +62,6 @@ export async function fetchTickerV2(symbol: string): Promise<TickerV2> {
     symbol: symbol.toUpperCase(),
     open,
     close,
-    bid: Number(raw.bid),
-    ask: Number(raw.ask),
     changePct24h: open > 0 ? ((close - open) / open) * 100 : 0,
   };
 }
