@@ -63,6 +63,24 @@ describe("WatchList trade actions", () => {
     expect(document.activeElement).toBe(buy);
   });
 
+  test("every action button says which asset it acts on", () => {
+    // MUI's Tooltip title becomes the button's accessible name. Buy and Chart
+    // named the asset; Sell said only "Sell", so all eight rows produced the
+    // same name and a screen-reader user could not tell which one they were
+    // about to sell. axe cannot catch this — the button HAS a name, it is just
+    // not a distinguishing one — and the existing count assertions passed
+    // happily with the ambiguous version.
+    renderWatchList();
+    const names = screen
+      .getAllByRole("button")
+      .map((b) => b.getAttribute("aria-label") || b.textContent || "");
+
+    expect(new Set(names).size).toBe(names.length); // all distinct
+    for (const name of names) {
+      expect(name).toMatch(/BTC|ETH/);
+    }
+  });
+
   test("each row's actions target that row's symbol", () => {
     renderWatchList();
     const charts = screen.getAllByRole("button", { name: /chart/i });

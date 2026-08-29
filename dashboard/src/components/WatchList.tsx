@@ -151,7 +151,7 @@ const WatchListActions = ({ symbol, base }: { symbol: string; base: string }) =>
           </button>
         </Tooltip>
         <Tooltip
-          title="Sell"
+          title={`Sell ${base}`}
           placement="top"
           arrow
           slots={{ transition: Grow }}
