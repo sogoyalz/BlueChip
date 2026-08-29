@@ -11,7 +11,7 @@ const theme = createTheme({
     },
     primary: {
       main: "#e50914", // --accent
-      light: "#ff1f2e", // --accent-hover
+      light: "#c8101c", // --accent-hover
       contrastText: "#ffffff",
     },
     success: {
@@ -24,7 +24,7 @@ const theme = createTheme({
     text: {
       primary: "#f0f0f2", // --ink
       secondary: "#a0a0a8", // --ink-2
-      disabled: "#6c6c74", // --ink-3
+      disabled: "#8b93a1", // --ink-3
     },
   },
   typography: {

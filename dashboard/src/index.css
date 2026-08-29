@@ -14,7 +14,12 @@
                        the page ground, below the 4.5:1 WCAG AA floor */
 
   --accent: #e50914; /* primary accent */
-  --accent-hover: #ff1f2e;
+  /* Hover DARKENS rather than lightens. White on the old #ff1f2e measured
+     3.83:1, under the 4.5:1 AA needs, and no text colour clears it against a
+     red that light. Every use of this token is a button background with white
+     text on it. The landing app carries the same value for the same reason.
+     Not caught by the axe scan, which only ever sees the resting state. */
+  --accent-hover: #c8101c;
   --accent-soft: rgba(229, 9, 20, 0.1);
   /* The accent as TEXT on --accent-soft. Brand red at #e50914 measures only
      3.4–4.0:1 there, under the 4.5:1 AA needs; this is the same hue lifted
