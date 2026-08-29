@@ -4,7 +4,7 @@ import { OrdersModel } from "../model/OrdersModel";
 import { verifyToken } from "../middlewares/AuthMiddleware";
 import { orderLimiter } from "../middlewares/rateLimit";
 import { OrderError, placeOrder, cancelOrder } from "../services/orderEngine";
-import { clearBalancesCache } from "../services/geminiPrivate";
+import { clearBalancesCache, GeminiUnavailableError } from "../services/geminiPrivate";
 import { snapshotNow } from "../services/snapshots";
 import { applyObservation, RESTING_STATUSES } from "../services/orderState";
 import { log } from "../util/logger";
@@ -25,6 +25,17 @@ router.post("/api/orders", verifyToken, orderLimiter, async (req, res) => {
   } catch (err) {
     if (err instanceof OrderError) {
       res.status(err.status).json({ message: err.message });
+      return;
+    }
+    // Same distinction as the account routes: an unconfigured or rejected key
+    // is a setup problem, and telling the user "failed to place order" hides
+    // that the order was never attempted.
+    if (err instanceof GeminiUnavailableError) {
+      log.warn("orders.exchange_unavailable", { reason: err.reason });
+      res.status(503).json({
+        code: "exchange_unavailable",
+        message: "Trading is unavailable: this server's exchange connection is not set up.",
+      });
       return;
     }
     log.error("orders.place_failed", {

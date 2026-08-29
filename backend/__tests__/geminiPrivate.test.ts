@@ -214,6 +214,19 @@ describe("retry policy", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  test("a read does NOT retry rejected credentials", async () => {
+    // A bad API key will not be good again in 250ms. Gemini names the cause in
+    // its reason field; the status alone cannot tell this from a bad order.
+    const mockFetch = jest.fn().mockResolvedValue({
+      ok: false, status: 400, json: async () => ({ reason: "InvalidSignature" }),
+    });
+    global.fetch = mockFetch as unknown as typeof fetch;
+
+    const { getGeminiBalances } = require("../services/geminiPrivate");
+    await expect(getGeminiBalances()).rejects.toThrow(/rejected our credentials/);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
   test("a read does NOT retry a 4xx — it is a decision, not a blip", async () => {
     const mockFetch = jest.fn().mockResolvedValue(fail(400));
     global.fetch = mockFetch as unknown as typeof fetch;

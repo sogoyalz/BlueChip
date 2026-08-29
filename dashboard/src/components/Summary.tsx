@@ -8,6 +8,7 @@ import { linePath } from "./shared/chartPath";
 import { usd, usdAbs, signedUsd, pct } from "./shared/format";
 import { Account, Holding } from "../types";
 import { API_URL } from "../config";
+import { accountErrorMessage, accountErrorToast } from "./shared/apiError";
 
 
 const RANGES = ["1D", "1W", "1M", "ALL"] as const;
@@ -44,16 +45,20 @@ const Summary = () => {
         console.error("Failed to load holdings summary:", err);
         // toastId dedupes so a retry / StrictMode double-mount can't stack
         // two identical error toasts.
-        toast.error("Could not load holdings summary.", {
-          toastId: "holdings-summary-error",
-        });
+        toast.error(
+          accountErrorMessage(err, "Could not load holdings summary."),
+          accountErrorToast(err, "holdings-summary-error"),
+        );
       });
     axios
       .get<Account>(`${API_URL}/api/account`, opts)
       .then((res) => setAccount(res.data))
       .catch((err) => {
         console.error("Failed to load account:", err);
-        toast.error("Could not load account.", { toastId: "account-error" });
+        toast.error(
+          accountErrorMessage(err, "Could not load account."),
+          accountErrorToast(err, "account-error"),
+        );
       });
   }, []);
 

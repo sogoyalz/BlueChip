@@ -6,6 +6,7 @@ import StatCard from "./shared/StatCard";
 import { Account } from "../types";
 import { API_URL } from "../config";
 import { usd } from "./shared/format";
+import { accountErrorMessage, accountErrorToast } from "./shared/apiError";
 
 
 const Funds = () => {
@@ -19,7 +20,10 @@ const Funds = () => {
       .then((res) => setAccount(res.data))
       .catch((err) => {
         console.error("Failed to load account:", err);
-        toast.error("Could not load account.", { toastId: "funds-account-error" });
+        toast.error(
+          accountErrorMessage(err, "Could not load account."),
+          accountErrorToast(err, "funds-account-error"),
+        );
       });
   }, []);
 

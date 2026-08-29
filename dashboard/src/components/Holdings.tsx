@@ -10,6 +10,7 @@ import StatCard from "./shared/StatCard";
 import { Holding } from "../types";
 import { API_URL } from "../config";
 import { num, price as fmtPrice, usd } from "./shared/format";
+import { accountErrorMessage, accountErrorToast } from "./shared/apiError";
 
 
 const columns: Column<Holding>[] = [
@@ -75,7 +76,10 @@ const Holdings = () => {
         .catch((err) => {
           console.error("Failed to load holdings:", err);
           if (showSpinner) {
-            toast.error("Could not load holdings.", { toastId: "holdings-error" });
+            toast.error(
+              accountErrorMessage(err, "Could not load holdings."),
+              accountErrorToast(err, "holdings-error"),
+            );
           }
         })
         .finally(() => {

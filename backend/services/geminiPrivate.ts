@@ -67,6 +67,23 @@ function nextNonce(): number {
  * Carries the HTTP status so the retry policy can tell a transient failure
  * from a refusal. The message is unchanged from before this class existed.
  */
+/**
+ * The exchange cannot be reached ON OUR ACCOUNT: credentials are absent, or
+ * Gemini rejected them. Distinct from a genuine failure because it is a known,
+ * expected state — a fresh clone has no sandbox key — and the caller should
+ * say "not configured", not "something went wrong".
+ */
+/** Gemini's own reason codes that mean the key, signature or nonce is wrong. */
+const CREDENTIAL_REASONS =
+  /^(Invalid(Apikey|Signature|Nonce)|Missing(Apikey|Payload|Signature)Header|AuthenticationError)$/i;
+
+export class GeminiUnavailableError extends Error {
+  constructor(readonly reason: "not_configured" | "rejected", message: string) {
+    super(message);
+    this.name = "GeminiUnavailableError";
+  }
+}
+
 class GeminiHttpError extends Error {
   constructor(readonly status: number, path: string) {
     super(`Gemini ${path} responded ${status}`);
@@ -80,7 +97,10 @@ async function signedPost<T>(
   params: Record<string, unknown> = {}
 ): Promise<T> {
   if (!API_KEY || !API_SECRET) {
-    throw new Error("GEMINI_API_KEY / GEMINI_API_SECRET are not configured");
+    throw new GeminiUnavailableError(
+      "not_configured",
+      "GEMINI_API_KEY / GEMINI_API_SECRET are not configured"
+    );
   }
 
   const payload = { request: path, nonce: nextNonce(), ...params };
@@ -104,6 +124,22 @@ async function signedPost<T>(
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!res.ok) {
+    // 401/403 is unambiguously our key. A 400 is NOT: Gemini answers a
+    // malformed or unfillable ORDER with 400 too, so the reason field has to
+    // decide. Treating every 400 as a credential problem would report an
+    // insufficient-funds rejection as a misconfigured server.
+    let reason = "";
+    try {
+      reason = String(((await res.json()) as { reason?: unknown }).reason ?? "");
+    } catch {
+      /* no JSON body — fall through to the generic error */
+    }
+    if (res.status === 401 || res.status === 403 || CREDENTIAL_REASONS.test(reason)) {
+      throw new GeminiUnavailableError(
+        "rejected",
+        `Gemini rejected our credentials on ${path} (${res.status}${reason ? ` ${reason}` : ""})`
+      );
+    }
     throw new GeminiHttpError(res.status, path);
   }
   return (await res.json()) as T;
@@ -141,8 +177,10 @@ async function geminiPrivatePost<T>(
       return await signedPost<T>(path, params);
     } catch (err) {
       lastErr = err;
-      // A 4xx is a decision, not a blip. Repeating it changes nothing and
-      // burns a nonce.
+      // Absent or rejected credentials will not be different in 250ms, and a
+      // 4xx is a decision rather than a blip. Repeating either changes nothing
+      // and burns a nonce.
+      if (err instanceof GeminiUnavailableError) throw err;
       const status = err instanceof GeminiHttpError ? err.status : undefined;
       if (status !== undefined && status < 500) throw err;
       // See above: a retry must be cheap, and a second timeout is not.
