@@ -60,6 +60,17 @@ describe("Holdings", () => {
     expect(screen.getByText("+0.25%")).toHaveClass("profit");
   });
 
+  test("keeps the decimals a sub-dollar price needs", async () => {
+    // num() is fixed at 2dp, which turns 0.0899 into "0.09" — the exact case
+    // price() exists for.
+    mockedGet.mockResolvedValue({
+      data: [{ symbol: "DOGEUSD", qty: 100, price: 0.0899, dayChangePct: 1 }],
+    });
+    renderHoldings();
+    expect(await screen.findByText("0.0899")).toBeInTheDocument();
+    expect(screen.queryByText("0.09")).not.toBeInTheDocument();
+  });
+
   test("surfaces an error toast when the request fails", async () => {
     mockedGet.mockRejectedValue(new Error("network down"));
     renderHoldings();
@@ -99,6 +110,32 @@ describe("Holdings", () => {
       await screen.findByText(/couldn.t load holdings/i);
       expect(screen.queryByText("Holdings (0)")).not.toBeInTheDocument();
       expect(screen.getByText("Holdings")).toBeInTheDocument();
+    });
+
+    test("a holding with no price shows no value, not $0.00", async () => {
+      // The backend types price as optional and leaves it out whenever the
+      // symbol is missing from its price cache. `(price ?? 0) * qty` rendered
+      // "0.00", which asserts the position is worthless.
+      mockedGet.mockResolvedValue({
+        data: [{ symbol: "DOGEUSD", qty: 500, dayChangePct: 1 }],
+      });
+      renderHoldings();
+      await screen.findByText("DOGEUSD");
+      expect(screen.queryByText("0.00")).not.toBeInTheDocument();
+      expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+    });
+
+    test("one unpriced holding makes the TOTAL unknown, not merely smaller", async () => {
+      // Summing an unknown as zero publishes a total we know is too low.
+      mockedGet.mockResolvedValue({
+        data: [
+          { symbol: "BTCUSD", qty: 2, price: 150, dayChangePct: 0 },
+          { symbol: "DOGEUSD", qty: 500, dayChangePct: 0 },
+        ],
+      });
+      renderHoldings();
+      await screen.findByText("DOGEUSD");
+      expect(screen.queryByText("$300.00")).not.toBeInTheDocument();
     });
 
     test("a genuinely empty portfolio still reports zero, not unknown", async () => {

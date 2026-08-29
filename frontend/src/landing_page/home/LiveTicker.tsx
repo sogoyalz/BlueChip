@@ -101,7 +101,12 @@ function LiveTicker() {
               <strong>{symbol.replace(/USD$/, "")}</strong>{" "}
               {fmtPrice(tick.price)}{" "}
               <span className={up ? "ticker-up" : "ticker-down"}>
-                {up ? "▲" : "▼"}
+                {/* The arrow is decoration — the sign below carries the
+                    direction. Math.abs() used to strip it, leaving a fall and
+                    a rise of the same size reading identically once the glyph
+                    and the colour are gone. */}
+                <span aria-hidden="true">{up ? "▲" : "▼"}</span>
+                {up ? "+" : "-"}
                 {Math.abs(tick.changePct24h).toFixed(2)}%
               </span>
             </span>

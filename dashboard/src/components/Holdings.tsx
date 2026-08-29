@@ -9,14 +9,29 @@ import PnLValue from "./shared/PnLValue";
 import StatCard from "./shared/StatCard";
 import { Holding } from "../types";
 import { API_URL } from "../config";
-import { num, usd } from "./shared/format";
+import { num, price as fmtPrice, usd } from "./shared/format";
 
 
 const columns: Column<Holding>[] = [
   { key: "symbol", label: "Asset" },
   { key: "qty", label: "Qty." },
-  { key: "price", label: "Price", render: (h) => num(h.price) },
-  { key: "curVal", label: "Cur. val", render: (h) => num((h.price ?? 0) * h.qty) },
+  // fmtPrice, not num: num is fixed at 2dp, which rounds DOGE at 0.0899 to
+  // "0.09" and LINK at 1.3905 to "1.39". Carrying more decimals as the price
+  // gets smaller is the entire reason price() exists.
+  { key: "price", label: "Price", render: (h) => fmtPrice(h.price) },
+  {
+    key: "curVal",
+    label: "Cur. val",
+    // `(h.price ?? 0) * h.qty` rendered "0.00" for a holding whose price the
+    // backend could not supply — asserting the position is worthless rather
+    // than admitting the price is unknown. The backend types price as
+    // optional, and it is genuinely absent whenever the symbol is missing from
+    // the price cache.
+    render: (h) =>
+      typeof h.price === "number" && Number.isFinite(h.price)
+        ? num(h.price * h.qty)
+        : "—",
+  },
   {
     key: "day",
     label: "24h chg.",
@@ -78,6 +93,12 @@ const Holdings = () => {
 
   const labels = holdings.map((h) => h.symbol);
 
+  // A holding with no price contributed 0 to this sum, quietly understating
+  // the total. A total that is missing one of its parts is not a total, so say
+  // so rather than publishing a number we know to be too low.
+  const allPriced = holdings.every(
+    (h) => typeof h.price === "number" && Number.isFinite(h.price)
+  );
   const totalCurrent = holdings.reduce(
     (sum, h) => sum + (h.price ?? 0) * h.qty,
     0
@@ -118,7 +139,7 @@ const Holdings = () => {
 
       <div className="row">
         <StatCard label="Current value">
-          {loaded ? usd(totalCurrent) : "—"}
+          {loaded && allPriced ? usd(totalCurrent) : "—"}
         </StatCard>
       </div>
       <div className="panel chart-panel">

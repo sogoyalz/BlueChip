@@ -30,11 +30,36 @@ describe('LiveTicker Component', () => {
         expect(await screen.findByTestId('live-ticker')).toBeInTheDocument();
         expect(screen.getByText('BTC')).toBeInTheDocument();
         expect(screen.getByText('$64,123.45')).toBeInTheDocument();
-        expect(screen.getByText(/▲2\.40%/)).toBeInTheDocument();
+        expect(screen.getByText(/\+2\.40%/)).toBeInTheDocument();
         // sub-$1 coins get extra precision
         expect(screen.getByText('DOGE')).toBeInTheDocument();
         expect(screen.getByText('$0.0741')).toBeInTheDocument();
-        expect(screen.getByText(/▼1\.20%/)).toBeInTheDocument();
+        expect(screen.getByText(/-1\.20%/)).toBeInTheDocument();
+    });
+
+    test("the direction is in the text, not only the arrow and the colour", async () => {
+        // Math.abs() stripped the sign, so a 2.40% fall and a 2.40% rise
+        // rendered the same digits — the difference lived entirely in a ▲/▼
+        // glyph and a CSS class. Strip the decorative glyphs, as assistive
+        // tech does, and the two must still read differently.
+        mockedGet.mockResolvedValue({
+            data: {
+                prices: {
+                    BTCUSD: { price: 100, changePct24h: 2.4 },
+                    ETHUSD: { price: 200, changePct24h: -2.4 },
+                },
+            },
+        });
+        const { container } = render(<LiveTicker />);
+        await screen.findByTestId('live-ticker');
+
+        container.querySelectorAll('[aria-hidden="true"]').forEach((n) => n.remove());
+        const spoken = container.textContent ?? '';
+
+        expect(spoken).toContain('+2.40%');
+        expect(spoken).toContain('-2.40%');
+        expect(spoken).not.toContain('▲');
+        expect(spoken).not.toContain('▼');
     });
 
     test("renders nothing when the backend is unreachable", async () => {
