@@ -18,11 +18,59 @@ const REDACT = /^(password|token|secret|apikey|api_key|authorization|cookie|sign
 
 const MAX_VALUE_CHARS = 500;
 
+/** How deep to walk before collapsing a value to a placeholder. */
+const MAX_DEPTH = 4;
+
 /**
- * Shallow-redacts a context object. Anything key-matching REDACT becomes
- * "[redacted]"; an Error becomes its name, message and stack; everything else
- * is truncated so a stray large object cannot flood the log.
+ * Redacts a context object for logging.
+ *
+ * Walks NESTED values, not just the top level. The shallow version replaced a
+ * top-level `token` but then stored the original object for anything else, so
+ * emit()'s JSON.stringify serialised `{ request: { apiKey: "..." } }` in full
+ * — the one thing this module exists to prevent.
+ *
+ * It also never throws. Serialising is how the size cap is measured, and
+ * JSON.stringify dies on a circular structure (an Express req, a Mongoose
+ * document, some driver errors). Every call here sits inside a catch block, so
+ * a throw would replace the real error with a serialisation error — and in
+ * alert() it would break the orphaned-fill path, the one report that cannot be
+ * reconstructed afterwards.
  */
+function redact(value: unknown, depth: number, seen: WeakSet<object>): unknown {
+  if (value === null || typeof value !== "object") {
+    if (typeof value === "string" && value.length > MAX_VALUE_CHARS) {
+      return `${value.slice(0, MAX_VALUE_CHARS)}…`;
+    }
+    return typeof value === "bigint" || typeof value === "function"
+      ? String(value)
+      : value;
+  }
+
+  if (value instanceof Error) {
+    return { name: value.name, message: value.message, stack: value.stack };
+  }
+  if (value instanceof Date) return value.toISOString();
+
+  if (seen.has(value)) return "[circular]";
+  if (depth >= MAX_DEPTH) return "[truncated]";
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 50).map((v) => redact(v, depth + 1, seen));
+  }
+
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (REDACT.test(key)) {
+      out[key] = "[redacted]";
+      continue;
+    }
+    if (v === undefined) continue;
+    out[key] = redact(v, depth + 1, seen);
+  }
+  return out;
+}
+
 function safe(context: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(context)) {
@@ -30,27 +78,55 @@ function safe(context: Record<string, unknown>): Record<string, unknown> {
       out[key] = "[redacted]";
       continue;
     }
+    if (value === undefined) continue;
+    // An Error is exempt from the size cap below: the stack is the single most
+    // useful thing in an error log, and capping it turned the whole object
+    // into a truncated string.
     if (value instanceof Error) {
       out[key] = { name: value.name, message: value.message, stack: value.stack };
       continue;
     }
-    if (value === undefined) continue;
-    const rendered = typeof value === "string" ? value : JSON.stringify(value);
-    out[key] =
-      rendered && rendered.length > MAX_VALUE_CHARS
-        ? `${rendered.slice(0, MAX_VALUE_CHARS)}…`
-        : value;
+    const cleaned = redact(value, 0, new WeakSet());
+    // Size cap, measured on the redacted form so a secret is never rendered
+    // just to count its characters.
+    if (cleaned !== null && typeof cleaned === "object") {
+      let rendered: string;
+      try {
+        rendered = JSON.stringify(cleaned) ?? "";
+      } catch {
+        out[key] = "[unserializable]";
+        continue;
+      }
+      out[key] =
+        rendered.length > MAX_VALUE_CHARS
+          ? `${rendered.slice(0, MAX_VALUE_CHARS)}…`
+          : cleaned;
+      continue;
+    }
+    out[key] = cleaned;
   }
   return out;
 }
 
 function emit(level: Level, event: string, context: Record<string, unknown>): void {
-  const line = JSON.stringify({
-    level,
-    event,
-    at: new Date().toISOString(),
-    ...safe(context),
-  });
+  let line: string;
+  try {
+    line = JSON.stringify({
+      level,
+      event,
+      at: new Date().toISOString(),
+      ...safe(context),
+    });
+  } catch {
+    // Last resort: report the event even if its context cannot be rendered.
+    // Losing the detail beats losing the fact that something happened.
+    line = JSON.stringify({
+      level,
+      event,
+      at: new Date().toISOString(),
+      contextError: "context could not be serialized",
+    });
+  }
   if (level === "error" || level === "alert") console.error(line);
   else if (level === "warn") console.warn(line);
   else console.log(line);
