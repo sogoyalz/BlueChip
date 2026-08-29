@@ -43,7 +43,12 @@ const restingOrder = (fields: object) => {
 let currentDocs: Record<string, unknown>[] = [];
 const findReturns = (orders: object[]) => {
   currentDocs = orders as Record<string, unknown>[];
-  mockedOrders.find.mockReturnValue({ limit: jest.fn().mockResolvedValue(orders) });
+  // Mirrors the real chain: find().sort().limit()
+  mockedOrders.find.mockReturnValue({
+    sort: jest.fn().mockReturnValue({
+      limit: jest.fn().mockResolvedValue(orders),
+    }),
+  });
 };
 
 /**

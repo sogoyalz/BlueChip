@@ -222,6 +222,39 @@ describe("conditional order writes (bug 3: the query must actually execute)", ()
   });
 });
 
+describe("a malformed fill price does not strand the order", () => {
+  test("the status is still recorded when avg_execution_price is unusable", async () => {
+    // Gemini sends amounts as strings, so a malformed avg_execution_price
+    // becomes NaN. Mongoose refuses NaN for a Number path with a CastError,
+    // which used to fail the ENTIRE update — leaving the order in a resting
+    // status forever. orderSync would then refetch it and fail again every
+    // five seconds while the user saw a filled order still listed as open.
+    const o = await OrdersModel.create(baseOrder());
+    await expect(
+      applyObservation(o._id, { status: "FILLED", filledQty: 1, fillPrice: NaN })
+    ).resolves.not.toBeNull();
+
+    const stored = await OrdersModel.findById(o._id);
+    expect(stored).toMatchObject({ status: "FILLED", filledQty: 1 });
+    // The price we could not read is absent, not stored as something wrong.
+    expect(stored!.fillPrice).toBeUndefined();
+  });
+
+  test("a good fill price is still recorded", async () => {
+    const o = await OrdersModel.create(baseOrder());
+    await applyObservation(o._id, { status: "FILLED", filledQty: 1, fillPrice: 50000 });
+    expect(await OrdersModel.findById(o._id)).toMatchObject({ fillPrice: 50000 });
+  });
+
+  test("Infinity is refused the same way", async () => {
+    const o = await OrdersModel.create(baseOrder());
+    await expect(
+      applyObservation(o._id, { status: "FILLED", filledQty: 1, fillPrice: Infinity })
+    ).resolves.not.toBeNull();
+    expect((await OrdersModel.findById(o._id))!.fillPrice).toBeUndefined();
+  });
+});
+
 describe("non-finite money never reaches storage", () => {
   test("mongoose rejects a NaN total outright", async () => {
     await expect(

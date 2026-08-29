@@ -108,7 +108,13 @@ export async function applyObservation(
   if (observed.filledQty > 0) {
     set.filledQty = observed.filledQty;
     set.filledAt = new Date();
-    if (observed.fillPrice !== undefined) set.fillPrice = observed.fillPrice;
+    // Only a real price. Gemini sends amounts as strings, so a malformed
+    // avg_execution_price becomes NaN — which mongoose refuses with a
+    // CastError, failing the ENTIRE update. The order then never leaves a
+    // resting status, so the reconciler refetches and fails on it every five
+    // seconds forever while the user sees a filled order still listed as open.
+    // The status is knowable even when the price is not; record what we know.
+    if (Number.isFinite(observed.fillPrice)) set.fillPrice = observed.fillPrice;
   }
   if (observed.reason !== undefined) set.reason = observed.reason;
 

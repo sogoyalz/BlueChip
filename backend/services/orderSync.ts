@@ -21,6 +21,9 @@ export const DEFAULT_SYNC_MS = 5_000;
 // how many we resolve per pass so a burst of fills can't spike the private API;
 // whatever is left over is picked up on the next tick a few seconds later.
 export const MAX_STATUS_LOOKUPS_PER_TICK = 25;
+// How many resting orders one pass will look at. Bounded so a large book can't
+// make a single tick unbounded work.
+export const RESTING_SCAN_LIMIT = 500;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let syncing = false;
@@ -30,8 +33,22 @@ export async function tick(): Promise<void> {
   const resting = await OrdersModel.find({
     // trusted(): this $in is ours, not user input — sanitizeFilter is on globally.
     status: trusted({ $in: RESTING_STATUSES }),
-  }).limit(500);
+  })
+    // Oldest first, so the cap below takes the orders most overdue for
+    // reconciliation rather than whatever natural order happens to return.
+    .sort({ createdAt: 1 })
+    .limit(RESTING_SCAN_LIMIT);
   if (resting.length === 0) return;
+
+  if (resting.length === RESTING_SCAN_LIMIT) {
+    // At the cap the newest resting orders are not being looked at. Bounded
+    // work per tick is deliberate, but it must not be silent: this is the
+    // signal that orders are outliving the reconciler.
+    log.warn("orderSync.scan_capped", {
+      limit: RESTING_SCAN_LIMIT,
+      detail: "more orders are resting than one pass reconciles",
+    });
+  }
 
   // One request covers every order that is still resting — the steady state,
   // and by far the common case. Only orders that have LEFT the book cost a
