@@ -25,6 +25,7 @@ jest.mock("../model/OrdersModel", () => ({
     findOne: jest.fn(),
     findById: jest.fn(),
     findOneAndUpdate: jest.fn(),
+    countDocuments: jest.fn().mockResolvedValue(0),
     updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
   },
 }));
@@ -127,6 +128,8 @@ beforeEach(() => {
   // test otherwise leaks into every later one — which silently short-circuited the
   // idempotency check and made unrelated tests pass for the wrong reason.
   mockedOrders.findOne.mockResolvedValue(null);
+  // clearAllMocks wipes implementations, not just call history.
+  mockedOrders.countDocuments.mockResolvedValue(0);
 });
 
 describe("POST /api/orders — validation", () => {
@@ -474,6 +477,37 @@ describe("GET /api/orders", () => {
     expect(res.status).toBe(200);
     expect(mockedOrders.find).toHaveBeenCalledWith({ userId: "user-1" });
     expect(chain.sort).toHaveBeenCalledWith({ createdAt: -1 });
+  });
+
+  test("reports the TRUE total, not the size of the page it returned", async () => {
+    // The list is capped at 100 newest-first. Orders.tsx rendered that length
+    // as the user's order count, so someone with 150 orders was told 100.
+    const chain = { sort: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([]) };
+    mockedOrders.find.mockReturnValue(chain);
+    mockedOrders.countDocuments.mockResolvedValue(150);
+
+    const res = await request(app)
+      .get("/api/orders")
+      .set("Authorization", `Bearer ${token()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers["x-total-count"]).toBe("150");
+    expect(mockedOrders.countDocuments).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-1" })
+    );
+  });
+
+  test("the total respects the same filter as the page", async () => {
+    const chain = { sort: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([]) };
+    mockedOrders.find.mockReturnValue(chain);
+    mockedOrders.countDocuments.mockResolvedValue(3);
+
+    await request(app)
+      .get("/api/orders?status=open")
+      .set("Authorization", `Bearer ${token()}`);
+
+    const countFilter = mockedOrders.countDocuments.mock.calls.at(-1)![0];
+    expect(countFilter.status.$in).toEqual(["OPEN", "PARTIALLY_FILLED"]);
   });
 
   test("?status=open filters to resting orders", async () => {

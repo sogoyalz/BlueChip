@@ -11,6 +11,10 @@ import { log } from "../util/logger";
 
 const router = Router();
 
+// One page of orders. Bounded so a long history cannot make the response
+// unbounded; the true total travels in X-Total-Count.
+const ORDER_PAGE_SIZE = 100;
+
 // Place an order. 201 = accepted (check order.status: a MARKET order can
 // still come back REJECTED, e.g. insufficient funds — that's an order
 // outcome, not a request error).
@@ -43,7 +47,13 @@ router.get("/api/orders", verifyToken, async (req, res) => {
     }
     const orders = await OrdersModel.find(filter)
       .sort({ createdAt: -1 })
-      .limit(100);
+      .limit(ORDER_PAGE_SIZE);
+
+    // The list is capped, so its length is not the user's order count. The
+    // heading used to render that length as the total, telling someone with
+    // 150 orders they had 100. Sent as a header so the response body stays the
+    // plain array every caller already expects.
+    res.set("X-Total-Count", String(await OrdersModel.countDocuments(filter)));
     res.json(orders);
   } catch (err) {
     log.error("orders.list_failed", { userId: String(req.user?._id), err: err as Error });

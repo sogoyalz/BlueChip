@@ -87,6 +87,25 @@ describe("Orders partial-fill reporting", () => {
   });
 });
 
+describe("the order count in the heading", () => {
+  test("uses the backend's total, not the size of the page returned", async () => {
+    // The API caps the list at 100 newest-first, so rendering the array's
+    // length told a user with 150 orders they had 100.
+    mockedGet.mockResolvedValue({
+      data: [order({ _id: "o1" })],
+      headers: { "x-total-count": "150" },
+    });
+    render(<Orders />);
+    expect(await screen.findByRole("heading", { name: /Orders \(150\)/ })).toBeInTheDocument();
+  });
+
+  test("falls back to the page length when no total is sent", async () => {
+    mockedGet.mockResolvedValue({ data: [order({ _id: "o1" }), order({ _id: "o2" })] });
+    render(<Orders />);
+    expect(await screen.findByRole("heading", { name: /Orders \(2\)/ })).toBeInTheDocument();
+  });
+});
+
 describe("Orders cancel affordance", () => {
   // The exchange still holds the remainder of a partially-filled limit, so a
   // cancel is both possible and meaningful. Gating the button on OPEN alone

@@ -23,6 +23,7 @@ const STATUS_CLASS: Record<OrderStatus, string> = {
 const Orders = () => {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalOrders, setTotalOrders] = useState<number | null>(null);
   const navigate = useNavigate();
 
   const fetchOrders = useCallback((showSpinner: boolean) => {
@@ -31,7 +32,14 @@ const Orders = () => {
       .get<Order[]>(`${API_URL}/api/orders`, {
         withCredentials: true,
       })
-      .then((res) => setAllOrders(res.data))
+      .then((res) => {
+        setAllOrders(res.data);
+        // The list is one capped page, so its length is a lower bound on the
+        // user's order count. The backend sends the real total; fall back to
+        // the page length only when the header is absent.
+        const total = Number(res.headers?.["x-total-count"]);
+        setTotalOrders(Number.isFinite(total) ? total : res.data.length);
+      })
       .catch((err) => {
         console.error("Failed to load orders:", err);
         if (showSpinner) {
@@ -183,7 +191,8 @@ const Orders = () => {
   return (
     <>
       <h1 className="title">
-        Orders ({allOrders.length}){openCount > 0 && ` · ${openCount} open`}
+        Orders ({totalOrders ?? allOrders.length})
+        {openCount > 0 && ` · ${openCount} open`}
       </h1>
 
       <DataTable

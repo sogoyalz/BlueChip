@@ -85,6 +85,10 @@ app.use(
     methods: ["GET", "POST", "PUT", "DELETE"],
     // X-Requested-With is our CSRF header — must be allowed through preflight.
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    // Cross-origin JS can only read the handful of "simple" response headers
+    // unless they are named here. Without this the dashboard sees the header
+    // as undefined and silently falls back to counting the page it received.
+    exposedHeaders: ["X-Total-Count"],
     credentials: true, // <-- REQUIRED so cookies are allowed
   })
 );
