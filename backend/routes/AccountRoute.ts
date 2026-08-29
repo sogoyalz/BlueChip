@@ -20,12 +20,15 @@ router.get("/api/holdings", verifyToken, async (_req, res) => {
 router.get("/api/account", verifyToken, async (req, res) => {
   try {
     const user = req.user!;
-    const { balance, portfolioValue } = await getAccountTotals();
+    const { balance, portfolioValue, complete } = await getAccountTotals();
     res.json({
       username: user.username,
       email: user.email,
       balance,
       portfolioValue,
+      // False when a holding could not be priced, so portfolioValue omits it.
+      // The dashboard renders "—" rather than a total it knows is short.
+      portfolioValueComplete: complete,
       createdAt: user.createdAt,
     });
   } catch (err) {

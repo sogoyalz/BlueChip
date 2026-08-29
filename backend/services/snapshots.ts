@@ -3,35 +3,15 @@
 // after every fill (so trades show up immediately).
 
 import { SnapshotModel } from "../model/SnapshotModel";
-import { getGeminiBalances } from "./geminiPrivate";
-import { getPrice } from "./priceFeed";
-import { toCents } from "../util/money";
+import { portfolioCents } from "./account";
+import { log } from "../util/logger";
 
 export const DEFAULT_SNAPSHOT_MS = 15 * 60_000;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let sweeping = false;
 
-/**
- * Cash + every non-USD balance valued at the live cached price, in INTEGER
- * CENTS. Each dollar amount is rounded to cents individually before summing,
- * so the total is an exact integer-cent sum with no float drift.
- */
-async function portfolioValue(): Promise<{ valueCents: number; cashCents: number }> {
-  const balances = await getGeminiBalances();
-  let cashCents = 0;
-  let holdingsCents = 0;
-  for (const b of balances) {
-    const amount = Number(b.amount);
-    if (b.currency === "USD") {
-      cashCents += toCents(amount);
-    } else {
-      const symbol = `${b.currency}USD`;
-      holdingsCents += toCents(amount * (getPrice(symbol)?.price ?? 0));
-    }
-  }
-  return { cashCents, valueCents: cashCents + holdingsCents };
-}
+
 
 /**
  * Snapshot the shared account now (fire-and-forget safe: never throws).
@@ -43,10 +23,20 @@ async function portfolioValue(): Promise<{ valueCents: number; cashCents: number
  */
 export async function snapshotNow(): Promise<void> {
   try {
-    const { cashCents, valueCents } = await portfolioValue();
+    const { cashCents, valueCents, complete } = await portfolioCents();
+    if (!complete) {
+      // A snapshot is permanent. Writing a total that omits a holding we could
+      // not price would put a point on the chart that is known to be too low,
+      // indistinguishable forever from a real dip. A gap in the series is
+      // recoverable; a wrong point is not.
+      log.warn("snapshots.skipped_incomplete", {
+        reason: "at least one holding had no cached price",
+      });
+      return;
+    }
     await SnapshotModel.create({ cashCents, valueCents, ts: new Date() });
   } catch (err) {
-    console.warn("[snapshots] snapshotNow failed:", (err as Error).message);
+    log.warn("snapshots.failed", { err: err as Error });
   }
 }
 

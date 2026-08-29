@@ -85,6 +85,9 @@ const Summary = () => {
   // already shows "—" in exactly this situation; match it.
   const money = (known: boolean, render: () => string) => (known ? render() : "—");
   const accountKnown = account !== null;
+  // The backend reports when it could not price every holding; the total then
+  // omits one and must not be shown as a definite figure.
+  const portfolioKnown = accountKnown && account!.portfolioValueComplete !== false;
   // The day percentage needs BOTH sides: the move comes from holdings, the base
   // it is measured against comes from the account. Unknown either way.
   const deltaKnown = accountKnown && holdingsLoaded;
@@ -172,7 +175,7 @@ const Summary = () => {
           delta={<PnLValue text={money(deltaKnown, () => pct(dayPct))} />}
           sub="shared account: cash + holdings"
         >
-          {money(accountKnown, () => usdAbs(portfolioValue, 0))}
+          {money(portfolioKnown, () => usdAbs(portfolioValue, 0))}
         </StatCard>
         <StatCard
           label="Today's P/L"
@@ -191,7 +194,7 @@ const Summary = () => {
           <div>
             <p className="chart-label">Portfolio value</p>
             <h3 className="chart-value">
-              {money(accountKnown, () => usdAbs(portfolioValue))}
+              {money(portfolioKnown, () => usdAbs(portfolioValue))}
             </h3>
             <p className="chart-delta">
               <PnLValue

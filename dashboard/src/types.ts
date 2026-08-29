@@ -54,6 +54,8 @@ export interface Account {
   balance: number;
   portfolioValue?: number;
   createdAt?: string;
+  /** False when a holding could not be priced, so portfolioValue omits it. */
+  portfolioValueComplete?: boolean;
 }
 
 // One entry in the backend's shared Gemini price cache (GET /api/prices).

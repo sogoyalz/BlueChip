@@ -90,6 +90,22 @@ describe("snapshotNow", () => {
     expect(mockedSnapshots.create).not.toHaveBeenCalled();
   });
 
+  test("writes NO snapshot when a holding cannot be priced at all", async () => {
+    // A snapshot is permanent. Valuing an unpriced holding at zero would put a
+    // point on the chart that is known to be too low and is indistinguishable
+    // forever from a real dip. A gap in the series is recoverable; a wrong
+    // point is not.
+    mockedGetBalances.mockResolvedValue([
+      { currency: "USD", amount: "40000", available: "40000", availableForWithdrawal: "40000" },
+      { currency: "XYZ", amount: "500", available: "500", availableForWithdrawal: "500" },
+    ]);
+    mockedGetPrice.mockImplementation((sym: string) =>
+      sym === "XYZUSD" ? undefined : { price: 50000 }
+    );
+    await snapshotNow();
+    expect(mockedSnapshots.create).not.toHaveBeenCalled();
+  });
+
   test("writes NO snapshot when a live price is non-finite", async () => {
     mockedGetPrice.mockReturnValue({ price: Infinity });
     mockedGetBalances.mockResolvedValue([

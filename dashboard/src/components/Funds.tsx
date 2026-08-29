@@ -26,6 +26,10 @@ const Funds = () => {
   useEffect(loadAccount, [loadAccount]);
 
   const portfolioValue = account?.portfolioValue ?? account?.balance ?? 0;
+  // The backend says so when it could not price every holding, in which case
+  // this total omits one and is known to be too low.
+  const portfolioKnown =
+    account !== null && account.portfolioValueComplete !== false;
 
   return (
     <>
@@ -36,7 +40,7 @@ const Funds = () => {
           {account ? usd(account.balance) : "—"}
         </StatCard>
         <StatCard label="Portfolio value" sub="cash + holdings">
-          {account ? usd(portfolioValue) : "—"}
+          {portfolioKnown ? usd(portfolioValue) : "—"}
         </StatCard>
       </div>
 
