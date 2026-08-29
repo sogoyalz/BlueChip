@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 
 import { API_URL } from "../../config";
+import { num, price as fmtPrice } from "./format";
 
 // Top-of-book depth (bids/asks) streamed from Gemini's l2 feed via the
 // backend. Renders nothing until the book has data, so a cold backend or
@@ -18,14 +19,46 @@ interface BookResponse {
 
 const POLL_MS = 2500;
 
-const fmtPrice = (n: number) =>
-  n.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: n < 1 ? 5 : 2,
-  });
+const fmtQty = (n: number) => num(n, 4);
 
-const fmtQty = (n: number) =>
-  n.toLocaleString("en-US", { maximumFractionDigits: 4 });
+/**
+ * One side of the book.
+ *
+ * Module scope, not nested inside DepthPanel: a component declared in the
+ * render body is a brand-new component TYPE on every render, so React
+ * unmounts and rebuilds the entire subtree instead of updating it — measured
+ * as fresh DOM nodes on each of the 2.5s polls.
+ */
+const Side = ({
+  levels,
+  kind,
+  maxQty,
+}: {
+  levels: Level[];
+  kind: "bid" | "ask";
+  maxQty: number;
+}) => (
+  <div className="depth-side">
+    <div className="depth-row depth-head">
+      <span>Price</span>
+      <span>Qty</span>
+    </div>
+    {levels.map(([price, qty]) => (
+      <div className="depth-row" key={`${kind}-${price}`}>
+        <span
+          className="depth-bar"
+          style={{ width: `${Math.min((qty / maxQty) * 100, 100)}%` }}
+          data-kind={kind}
+          aria-hidden="true"
+        />
+        <span className={kind === "bid" ? "depth-price up" : "depth-price down"}>
+          {fmtPrice(price)}
+        </span>
+        <span className="depth-qty">{fmtQty(qty)}</span>
+      </div>
+    ))}
+  </div>
+);
 
 const DepthPanel = ({ symbol }: { symbol: string }) => {
   const [book, setBook] = useState<BookResponse | null>(null);
@@ -65,29 +98,6 @@ const DepthPanel = ({ symbol }: { symbol: string }) => {
     1e-9
   );
 
-  const Side = ({ levels, kind }: { levels: Level[]; kind: "bid" | "ask" }) => (
-    <div className="depth-side">
-      <div className="depth-row depth-head">
-        <span>Price</span>
-        <span>Qty</span>
-      </div>
-      {levels.map(([price, qty]) => (
-        <div className="depth-row" key={`${kind}-${price}`}>
-          <span
-            className="depth-bar"
-            style={{ width: `${Math.min((qty / maxQty) * 100, 100)}%` }}
-            data-kind={kind}
-            aria-hidden="true"
-          />
-          <span className={kind === "bid" ? "depth-price up" : "depth-price down"}>
-            {fmtPrice(price)}
-          </span>
-          <span className="depth-qty">{fmtQty(qty)}</span>
-        </div>
-      ))}
-    </div>
-  );
-
   return (
     <div className="panel depth-panel">
       <div className="depth-title-row">
@@ -101,11 +111,11 @@ const DepthPanel = ({ symbol }: { symbol: string }) => {
       <div className="depth-grid">
         <div>
           <p className="depth-side-label up">Bids</p>
-          <Side levels={book.bids} kind="bid" />
+          <Side levels={book.bids} kind="bid" maxQty={maxQty} />
         </div>
         <div>
           <p className="depth-side-label down">Asks</p>
-          <Side levels={book.asks} kind="ask" />
+          <Side levels={book.asks} kind="ask" maxQty={maxQty} />
         </div>
       </div>
     </div>

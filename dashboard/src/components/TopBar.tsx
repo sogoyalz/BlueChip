@@ -3,6 +3,7 @@ import React from "react";
 import Menu from "./Menu";
 import PnLValue from "./shared/PnLValue";
 import { usePrices } from "./PricesContext";
+import { price } from "./shared/format";
 
 const TickerBlock = ({ symbol, label }: { symbol: string; label: string }) => {
   const { prices } = usePrices();
@@ -11,12 +12,7 @@ const TickerBlock = ({ symbol, label }: { symbol: string; label: string }) => {
     <div className="index-group">
       <p className="index">{label}</p>
       <p className="index-points">
-        {tick
-          ? tick.price.toLocaleString("en-US", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })
-          : "—"}
+        {price(tick?.price)}
       </p>
       <p className="percent">
         {tick ? (

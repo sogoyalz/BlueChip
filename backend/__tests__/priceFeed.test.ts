@@ -88,3 +88,42 @@ describe("setPrice", () => {
     expect(getPrice("BTCUSD")?.source).toBe("rest");
   });
 });
+
+
+describe("an unusable price never becomes tradeable", () => {
+  // A NaN in the cache used to pass straight through order validation:
+  // `NaN > MAX_NOTIONAL` is false, so the notional cap did not catch it, and
+  // the order reached Gemini with the literal string "NaN" as its price. The
+  // WebSocket path always guarded this; the REST poller did not.
+  beforeEach(() => clearCache());
+
+  test.each([
+    ["NaN", NaN],
+    ["Infinity", Infinity],
+    ["zero", 0],
+    ["negative", -1],
+  ])("setPrice refuses %s", (_label, bad) => {
+    setPrice("BTCUSD", { price: bad as number });
+    expect(getPrice("BTCUSD")).toBeUndefined();
+    expect(isFresh("BTCUSD")).toBe(false);
+  });
+
+  test("a bad price does not overwrite a good one", () => {
+    setPrice("BTCUSD", { price: 50000 });
+    setPrice("BTCUSD", { price: NaN });
+    expect(getPrice("BTCUSD")?.price).toBe(50000);
+  });
+
+  test("isFresh is false for a recent but unusable entry", () => {
+    // Written directly, as a legacy or externally-mutated entry would be.
+    setPrice("BTCUSD", { price: 50000 });
+    const entry = getPrice("BTCUSD")!;
+    (entry as { price: number }).price = NaN;
+    expect(isFresh("BTCUSD")).toBe(false);
+  });
+
+  test("a good price is still fresh", () => {
+    setPrice("BTCUSD", { price: 50000 });
+    expect(isFresh("BTCUSD")).toBe(true);
+  });
+});

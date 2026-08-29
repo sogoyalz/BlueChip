@@ -19,6 +19,17 @@ export interface PriceEntry {
 // feed. Single-instance only — see render.yaml.
 const cache = new Map<string, PriceEntry>();
 
+/**
+ * A price we are willing to trade on. Gemini sends amounts as strings, and
+ * Number("") is 0 while Number("x") is NaN — neither is a price. The
+ * WebSocket path always checked this; the REST poller did not, and a NaN that
+ * reached the cache was passed straight through order validation, because
+ * `NaN > MAX_NOTIONAL` is false. The order then went to the exchange with the
+ * literal string "NaN" as its price.
+ */
+const isUsablePrice = (n: unknown): n is number =>
+  typeof n === "number" && Number.isFinite(n) && n > 0;
+
 let timer: ReturnType<typeof setInterval> | null = null;
 let polling = false;
 
@@ -40,6 +51,9 @@ export function setPrice(
   symbol: string,
   entry: Partial<PriceEntry> & { price: number }
 ): void {
+  // Refuse rather than cache: a bad price is worse than a stale one, because
+  // staleness is detected downstream and a NaN is not.
+  if (!isUsablePrice(entry.price)) return;
   const prev = cache.get(symbol.toUpperCase());
   cache.set(symbol.toUpperCase(), {
     changePct24h: entry.changePct24h ?? prev?.changePct24h ?? 0,
@@ -55,7 +69,13 @@ export function isFresh(
   maxAgeMs: number = DEFAULT_MAX_AGE_MS
 ): boolean {
   const entry = cache.get(symbol.toUpperCase());
-  return !!entry && Date.now() - entry.updatedAt <= maxAgeMs;
+  // Freshness gates order placement, so it has to mean "we have a price we can
+  // actually use" — not just "we wrote something recently".
+  return (
+    !!entry &&
+    isUsablePrice(entry.price) &&
+    Date.now() - entry.updatedAt <= maxAgeMs
+  );
 }
 
 /**
@@ -72,9 +92,16 @@ export async function pollOnce(): Promise<void> {
       const prev = cache.get(symbol);
       const wsIsFresher =
         prev?.source === "ws" && Date.now() - prev.updatedAt < 5_000;
+      const next = wsIsFresher ? prev.price : ticker.close;
+      if (!isUsablePrice(next)) {
+        // A malformed ticker leaves the last known good price in place. The
+        // staleness guard will refuse orders soon enough if it never recovers.
+        console.warn(`[priceFeed] ${symbol} returned an unusable price:`, ticker.close);
+        continue;
+      }
       cache.set(symbol, {
-        price: wsIsFresher ? prev.price : ticker.close,
-        changePct24h: ticker.changePct24h,
+        price: next,
+        changePct24h: Number.isFinite(ticker.changePct24h) ? ticker.changePct24h : 0,
         updatedAt: Date.now(),
         source: wsIsFresher ? "ws" : "rest",
       });
