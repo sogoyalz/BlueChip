@@ -42,7 +42,7 @@ const options: ChartOptions<"doughnut"> = {
   },
 };
 
-export function DoughnutChart({ data }: { data: ChartData<"doughnut"> }) {
+function DoughnutChartImpl({ data }: { data: ChartData<"doughnut"> }) {
   const description = describeCategoryChart(
     data,
     "Watchlist 24-hour price movement",
@@ -57,3 +57,7 @@ export function DoughnutChart({ data }: { data: ChartData<"doughnut"> }) {
     />
   );
 }
+
+// memo, like CandleChart: the parent re-renders on every price tick, and this
+// only needs to redraw when the slices would actually differ.
+export const DoughnutChart = React.memo(DoughnutChartImpl);

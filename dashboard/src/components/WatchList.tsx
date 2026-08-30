@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useMemo, useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 
 import GeneralContext from "./GeneralContext";
@@ -47,20 +47,38 @@ const WatchList = () => {
   // Doughnut compares each asset's 24h movement — raw prices would let BTC
   // dwarf every other slice.
   const movers = visible.filter((s) => prices[s.symbol]);
-  const data = {
-    labels: movers.map((s) => s.base),
-    datasets: [
-      {
-        label: "24h move (%)",
-        data: movers.map((s) => Math.abs(prices[s.symbol]?.changePct24h ?? 0)),
-        backgroundColor: movers.map((_, i) => sliceColor(i)),
-        // 2px surface-colored gap between slices (canvas can't resolve CSS
-        // vars, so this mirrors --surface from index.css)
-        borderColor: "#131316",
-        borderWidth: 2,
-      },
-    ],
-  };
+
+  // Chart.js decides whether to repaint by comparing the dataset it was given,
+  // so a fresh object every render means a full redraw every render — and this
+  // component re-renders on every SSE frame. The candlestick chart was fixed
+  // this way after it was measured repainting 4,524 times a minute; the
+  // doughnut was never given the same treatment.
+  //
+  // The key changes only when a slice would actually look different. Depending
+  // on `prices` directly would defeat the memo, because every frame rewrites
+  // updatedAt even when no price moved.
+  const sliceKey = movers
+    .map((s) => `${s.symbol}:${prices[s.symbol]?.changePct24h ?? ""}`)
+    .join("|");
+
+  const data = useMemo(
+    () => ({
+      labels: movers.map((s) => s.base),
+      datasets: [
+        {
+          label: "24h move (%)",
+          data: movers.map((s) => Math.abs(prices[s.symbol]?.changePct24h ?? 0)),
+          backgroundColor: movers.map((_, i) => sliceColor(i)),
+          // 2px surface-colored gap between slices (canvas can't resolve CSS
+          // vars, so this mirrors --surface from index.css)
+          borderColor: "#131316",
+          borderWidth: 2,
+        },
+      ],
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sliceKey],
+  );
 
   return (
     <div className="watchlist-container">
