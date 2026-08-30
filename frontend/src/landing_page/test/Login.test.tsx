@@ -18,9 +18,11 @@ import { toast } from "react-toastify";
 import Login from "../login/Login";
 import type { Mock } from "vitest";
 import { MemoryRouter } from "react-router-dom";
+import { DASHBOARD_URL } from "../../config";
 
 const mockedPost = axios.post as Mock;
 const mockedToastError = toast.error as unknown as Mock;
+const mockedToastSuccess = toast.success as unknown as Mock;
 
 const fillAndSubmit = () => {
   fireEvent.change(screen.getByLabelText(/email/i), {
@@ -56,6 +58,36 @@ describe("Login", () => {
       )
     );
     expect(mockedToastError).toHaveBeenCalledWith("Incorrect password or email");
+  });
+
+  test("hands off to the dashboard once the session cookie is set", async () => {
+    // The only uncovered path in this file: the success branch. The response
+    // has already set the httpOnly cookie, so the dashboard is authenticated
+    // the moment it loads — there is no token to pass along.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let assigned = "";
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        get href() { return assigned; },
+        set href(v: string) { assigned = v; },
+      },
+    });
+
+    mockedPost.mockResolvedValue({ data: { success: true, message: "Welcome back" } });
+    render(
+      <MemoryRouter>
+        <Login />
+      </MemoryRouter>,
+    );
+    fillAndSubmit();
+
+    await waitFor(() => expect(mockedToastSuccess).toHaveBeenCalledWith("Welcome back"));
+    // Deferred so the toast is readable before the page changes.
+    expect(assigned).toBe("");
+    vi.advanceTimersByTime(1200);
+    expect(assigned).toBe(DASHBOARD_URL);
+    vi.useRealTimers();
   });
 
   test("shows the server's message when the API answers with a 4xx", async () => {
