@@ -77,10 +77,11 @@ sites (Netlify), the backend runs as a Node service (Render).
 **Auth crosses app boundaries via a cookie.** The landing site posts credentials
 to the backend, which sets an httpOnly cookie; the dashboard then loads already
 authenticated. There is no token in the URL and no token in a request body —
-both leak into logs, history, and referrer headers. The cookie is
-`sameSite: "lax"`, which requires all three services to share one registrable
-domain in production (`www.` / `app.` / `api.`). Deploying them on unrelated
-domains breaks login silently — see §7.
+both leak into logs, history, and referrer headers. The cookie's
+`sameSite` is set by `COOKIE_SAMESITE` and defaults to `lax`, which requires
+all three services to share one registrable domain in production (`www.` /
+`app.` / `api.`). Deploying them on unrelated domains without setting it
+breaks login silently — see §7.
 
 ---
 
@@ -212,7 +213,11 @@ own decimal price model, and Gemini — not this app — is the ledger for them.
   that gap alone enumerates registered addresses.
 - CSRF: every state-changing request must carry `X-Requested-With:
   XMLHttpRequest`, a header only same-origin or CORS-permitted JavaScript can
-  set. Layered with the `sameSite: "lax"` cookie.
+  set. It layers with the cookie's `sameSite` but does not depend on it: a
+  split-domain deployment runs `COOKIE_SAMESITE=none`, where `sameSite`
+  contributes nothing and this check is the whole defence. It holds on its
+  own — a cross-site page cannot set a custom header without a preflight the
+  origin allowlist rejects.
 - `mongoose.set("sanitizeFilter", true)` globally strips `$`-operators from
   query filters; the two places that legitimately need one wrap it in
   `mongoose.trusted()`.
@@ -381,10 +386,18 @@ then the database connection closes, with a 10-second cap so a deploy is never
 held open. SSE streams are ended explicitly — they are held open indefinitely
 by design, and an HTTP server will not finish closing while any remain.
 
-**Domain requirement.** The auth cookie is `sameSite: "lax"`. All three
-services must sit under one registrable domain (`www.` / `app.` / `api.`) or
-the cookie will not be sent and login fails silently with 401s. The alternative
-is `sameSite: "none"` with `secure: true`, which widens CSRF exposure.
+**Domain requirement.** The auth cookie's `sameSite` is a deployment setting,
+`COOKIE_SAMESITE`, and getting it wrong breaks all authentication silently —
+the browser stops sending the cookie and every request 401s with nothing in
+any log. Two valid answers:
+
+- Leave it unset (`lax`) and put all three services under one registrable
+  domain (`www.` / `app.` / `api.`). Safer: the cookie stays first-party and
+  `lax` blocks the cross-site vectors `none` allows.
+- Set `COOKIE_SAMESITE=none` and keep the platform domains. Requires
+  `NODE_ENV=production`, which is what sets `Secure`; the backend refuses to
+  boot on the wrong combination rather than letting the browser drop the
+  cookie. The CSRF header check is unconditional and holds on its own here.
 
 ### The migration
 

@@ -11,10 +11,11 @@ const Home = () => {
   // so `false` never renders anything.
   const [authed, setAuthed] = useState<boolean | null>(null);
 
-  // Auth lives entirely in an httpOnly cookie the browser sends automatically
-  // (sameSite:none in production, shared localhost domain in dev). We never see
-  // the token in JS and it's never in the URL — we just ask the backend "is
-  // this cookie still valid?" and render the dashboard only once it says yes.
+  // Auth lives entirely in an httpOnly cookie the browser sends automatically.
+  // We never see the token in JS and it is never in the URL — we just ask the
+  // backend "is this cookie still valid?" and render the dashboard only once
+  // it says yes. How the cookie is scoped is the deployment's business: see
+  // COOKIE_SAMESITE in render.yaml.
   useEffect(() => {
     let cancelled = false;
     axios

@@ -109,12 +109,14 @@ NODE_ENV=production
 # Production only: comma-separated allowed browser origins
 # CORS_ORIGINS=https://your-landing.netlify.app,https://your-dashboard.netlify.app
 #
-# NOTE: the auth cookie is sameSite:"lax", which requires the backend and
-# both frontends to share ONE registrable domain (e.g. api./app./www.yoursite.com).
-# If you deploy to the default *.onrender.com / *.netlify.app domains instead,
-# the cookie won't be sent cross-site and login will silently fail. Either set
-# up custom subdomains on one domain, or change sameSite to "none" in
-# backend/controllers/AuthController.ts before deploying.
+# NOTE: the auth cookie defaults to sameSite:"lax", which requires the backend
+# and both frontends to share ONE registrable domain (e.g. api./app./www.
+# yoursite.com). If you deploy to the default *.onrender.com / *.netlify.app
+# domains instead, the cookie won't be sent cross-site and login will silently
+# fail. Either set up custom subdomains on one domain, or set
+# COOKIE_SAMESITE=none (which also needs NODE_ENV=production, since that is
+# what sets Secure — the backend refuses to boot on the wrong combination).
+# COOKIE_SAMESITE=
 
 # Gemini SANDBOX trading credentials — register at
 # https://exchange.sandbox.gemini.com/ and create an API key with Trading
