@@ -10,7 +10,7 @@ services:
     dockerContext: .
     healthCheckPath: /backend/readyz
     numInstances: 1
-    autoDeployTrigger: off
+    autoDeployTrigger: 'off'
     envVars:
       - key: NODE_ENV
         value: production
