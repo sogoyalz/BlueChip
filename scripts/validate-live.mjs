@@ -45,16 +45,18 @@ if (env.MONGO_URL) await check("configured MongoDB (read-only)", async () => {
 });
 else checks.push({ name: "configured MongoDB", status: "skipped", detail: "MONGO_URL missing" });
 
-for (const [label, key, suffix] of [["landing", "LIVE_LANDING_URL", "/"], ["dashboard", "LIVE_DASHBOARD_URL", "/"], ["API readiness", "LIVE_API_URL", "/readyz"]]) {
+for (const [label, key] of [["landing", "LIVE_LANDING_URL"], ["dashboard", "LIVE_DASHBOARD_URL"], ["API readiness", "LIVE_API_URL"]]) {
   if (!env[key]) { checks.push({ name: label, status: "skipped", detail: `${key} is not known/configured` }); continue; }
   await check(label, async () => {
     const url = new URL(env[key]);
     if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) throw Error();
-    const target = new URL(suffix, url.origin);
+    const target = key === "LIVE_API_URL"
+      ? new URL(`${url.pathname.replace(/\/$/, "")}/readyz`, url.origin)
+      : url;
     const response = await fetch(target, { signal: AbortSignal.timeout(20_000), redirect: "error" });
     if (!response.ok) throw Error();
     if (key === "LIVE_API_URL" && (await response.json()).ready !== true) throw Error();
-    return { origin: url.origin, status: response.status };
+    return { url: target.href, status: response.status };
   });
 }
 checks.push({ name: "authenticated sandbox trading", status: "skipped", detail: "Public-only validation requested; no signed exchange requests were made." });

@@ -43,3 +43,11 @@ A new optional one-service hosting wrapper serves the two SPAs and API from one 
 Latest verification: all three production builds and **669 regular tests** passed (407 backend, 201 dashboard, 34 landing, 27 browser), plus **one separate local HTTPS deployment browser test**, for **670 across both commands**. E2E TypeScript, Compose/Caddy validation from the prior package, and script/diff checks passed. A scan of all candidate source files found no occurrences of configured database, JWT, or Gemini credentials.
 
 Render Free sleeps when idle, pausing reconciliation/snapshots until the app wakes. This trade-off is documented in the deployment guide. Public service creation, private runtime credential transfer, and live HTTPS checks remain the final deployment steps.
+
+## Render deployment attempt
+
+The new `sogoyalz/BlueChip` repository was uploaded to `main`. A Render Free Docker service was created with manual deployments, readiness at `/backend/readyz`, and the authorized runtime configuration stored privately. The cloud build passed. The assigned address is `https://bluechip-hn6y.onrender.com`, but the application is **not ready for use**: startup cannot connect to the configured MongoDB instance because it runs on the developer's laptop (`localhost`). No local backend was listening on port 3002 when deployment began.
+
+The remaining prerequisite is a hosted MongoDB database. MongoDB Atlas offers a Free cluster; account sign-in/setup remains a user action. No database migration, public network allowlist change, or paid database provisioning has been performed. Existing local data remains unchanged. After a cloud database is configured, update Render's private `MONGO_URL`, decide which local data should be migrated, redeploy, and verify public HTTPS authentication and the dashboard.
+
+The read-only live validation script now preserves configured URL paths, so `/app/` and `/backend/readyz` are checked correctly when all services share one origin.
