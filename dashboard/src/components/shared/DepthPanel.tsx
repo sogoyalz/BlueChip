@@ -62,11 +62,13 @@ const Side = ({
 
 const DepthPanel = ({ symbol }: { symbol: string }) => {
   const [book, setBook] = useState<BookResponse | null>(null);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     let cancelled = false;
     setBook(null);
     const load = () => {
+      setNow(Date.now());
       axios
         .get<BookResponse>(`${API_URL}/api/book/${symbol}`)
         .then((res) => {
@@ -85,6 +87,9 @@ const DepthPanel = ({ symbol }: { symbol: string }) => {
   }, [symbol]);
 
   if (!book || (book.bids.length === 0 && book.asks.length === 0)) return null;
+  if (!book.updatedAt || now - book.updatedAt > 30_000) {
+    return <p role="status">Order book delayed. Waiting for fresh exchange data.</p>;
+  }
 
   const bestBid = book.bids[0]?.[0];
   const bestAsk = book.asks[0]?.[0];

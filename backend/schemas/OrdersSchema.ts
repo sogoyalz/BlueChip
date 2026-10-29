@@ -1,8 +1,11 @@
 import { Schema, Types } from "mongoose";
+import { OrderEvent, ORDER_EVENT_KINDS } from "./OrderEvent";
 
 export type OrderSide = "BUY" | "SELL";
 export type OrderType = "MARKET" | "LIMIT";
 export type OrderStatus =
+  | "PENDING"
+  | "UNKNOWN"
   | "OPEN"
   | "PARTIALLY_FILLED"
   | "FILLED"
@@ -21,6 +24,17 @@ export interface IOrder {
   fillPrice?: number; // avg_execution_price once any of the order has filled
   geminiOrderId?: string; // Gemini sandbox order_id — source of truth for status
   clientOrderId?: string; // client-supplied idempotency key (unique per user)
+  exchangeClientOrderId?: string;
+  requestHash?: string;
+  lastCheckedAt?: Date;
+  nextCheckAt?: Date;
+  lastOperatorRecheckAt?: Date;
+  submittedAmount?: string;
+  submittedPrice?: string;
+  reconciliationAttempts?: number;
+  lastReconciliationCode?: string;
+  lastReconciliationErrorAt?: Date;
+  recentEvents?: OrderEvent[];
   reason?: string; // set when status becomes REJECTED
   createdAt: Date;
   filledAt?: Date;
@@ -38,7 +52,7 @@ export const OrdersSchema = new Schema<IOrder>({
   type: { type: String, enum: ["MARKET", "LIMIT"], required: true },
   status: {
     type: String,
-    enum: ["OPEN", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "REJECTED"],
+    enum: ["PENDING", "UNKNOWN", "OPEN", "PARTIALLY_FILLED", "FILLED", "CANCELLED", "REJECTED"],
     required: true,
   },
   qty: { type: Number, required: true },
@@ -47,6 +61,21 @@ export const OrdersSchema = new Schema<IOrder>({
   fillPrice: Number,
   geminiOrderId: String,
   clientOrderId: String,
+  exchangeClientOrderId: String,
+  requestHash: String,
+  lastCheckedAt: Date,
+  nextCheckAt: Date,
+  lastOperatorRecheckAt: Date,
+  submittedAmount: String,
+  submittedPrice: String,
+  reconciliationAttempts: { type: Number, default: 0, min: 0 },
+  lastReconciliationCode: String,
+  lastReconciliationErrorAt: Date,
+  recentEvents: {
+    type: [{ _id: false, kind: { type: String, enum: ORDER_EVENT_KINDS, required: true }, at: { type: Date, required: true },
+      status: String, filledQty: Number, actorId: Schema.Types.ObjectId, note: { type: String, maxlength: 200 } }],
+    default: [],
+  },
   reason: String,
   createdAt: { type: Date, default: Date.now },
   filledAt: Date,
@@ -54,7 +83,12 @@ export const OrdersSchema = new Schema<IOrder>({
 
 // orderSync scans resting orders; users list their own newest-first.
 OrdersSchema.index({ status: 1, type: 1 });
+OrdersSchema.index({ status: 1, createdAt: 1, _id: 1 });
 OrdersSchema.index({ userId: 1, createdAt: -1 });
+OrdersSchema.index({ userId: 1, createdAt: -1, _id: -1 });
+OrdersSchema.index({ userId: 1, status: 1, createdAt: -1, _id: -1 });
+OrdersSchema.index({ status: 1, lastCheckedAt: 1, _id: 1 });
+OrdersSchema.index({ exchangeClientOrderId: 1 }, { unique: true, partialFilterExpression: { exchangeClientOrderId: { $type: "string" } } });
 // Idempotency: a (user, clientOrderId) pair may exist at most once.
 //
 // This MUST be a partial index, not a sparse one. `sparse` reads like "skip

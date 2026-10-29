@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo, useContext } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 
@@ -9,6 +9,8 @@ import { usd, usdAbs, signedUsd, pct } from "./shared/format";
 import { Account, Holding } from "../types";
 import { API_URL } from "../config";
 import { accountErrorMessage, accountErrorToast } from "./shared/apiError";
+import GeneralContext from "./GeneralContext";
+import { useRefresh } from "./shared/useRefresh";
 
 
 const RANGES = ["1D", "1W", "1M", "ALL"] as const;
@@ -30,18 +32,21 @@ const Summary = () => {
   const [account, setAccount] = useState<Account | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [range, setRange] = useState<(typeof RANGES)[number]>("1M");
+  const { orderVersion } = useContext(GeneralContext);
 
-  useEffect(() => {
+  useRefresh(async (signal) => {
     // Auth rides the httpOnly cookie; this component mounts only after the
     // session is verified.
-    const opts = { withCredentials: true };
-    axios
+    const opts = { withCredentials: true, signal };
+    await Promise.allSettled([axios
       .get<Holding[]>(`${API_URL}/api/holdings`, opts)
       .then((res) => {
+        if (signal.aborted) return;
         setHoldings(res.data);
         setHoldingsLoaded(true);
       })
       .catch((err) => {
+        if (signal.aborted) return;
         console.error("Failed to load holdings summary:", err);
         // toastId dedupes so a retry / StrictMode double-mount can't stack
         // two identical error toasts.
@@ -49,35 +54,40 @@ const Summary = () => {
           accountErrorMessage(err, "Could not load holdings summary."),
           accountErrorToast(err, "holdings-summary-error"),
         );
-      });
+      }),
     axios
       .get<Account>(`${API_URL}/api/account`, opts)
-      .then((res) => setAccount(res.data))
+      .then((res) => { if (!signal.aborted) setAccount(res.data); })
       .catch((err) => {
+        if (signal.aborted) return;
         console.error("Failed to load account:", err);
         toast.error(
           accountErrorMessage(err, "Could not load account."),
           accountErrorToast(err, "account-error"),
         );
-      });
-  }, []);
+      })]);
+  }, orderVersion);
 
-  useEffect(() => {
-    axios
+  useRefresh(async (signal) => {
+    await axios
       .get<{ points: HistoryPoint[] }>(`${API_URL}/api/portfolio/history`, {
         params: { range },
         withCredentials: true,
+        signal,
       })
-      .then((res) => setHistory(res.data.points))
-      .catch((err) => console.error("Failed to load portfolio history:", err));
-  }, [range]);
+      .then((res) => { if (!signal.aborted) setHistory(res.data.points); })
+      .catch((err) => { if (!signal.aborted) console.error("Failed to load portfolio history:", err); });
+  }, `${range}:${orderVersion}`, 15_000);
 
   const currentValue = holdings.reduce((sum, h) => sum + (h.price ?? 0) * h.qty, 0);
 
   // Today's move, approximated from each holding's 24h-change percentage.
   // Cash doesn't move, so the dollar figure is holdings-only.
   const dayPL = holdings.reduce(
-    (sum, h) => sum + (h.price ?? 0) * h.qty * ((h.dayChangePct ?? 0) / 100),
+    (sum, h) => {
+      const r = (h.dayChangePct ?? 0) / 100;
+      return sum + (r > -1 ? (h.price ?? 0) * h.qty * r / (1 + r) : 0);
+    },
     0
   );
 
@@ -95,7 +105,7 @@ const Summary = () => {
   const portfolioKnown = accountKnown && account!.portfolioValueComplete !== false;
   // The day percentage needs BOTH sides: the move comes from holdings, the base
   // it is measured against comes from the account. Unknown either way.
-  const deltaKnown = accountKnown && holdingsLoaded;
+  const deltaKnown = portfolioKnown && holdingsLoaded && holdings.every(h => h.price !== undefined && h.dayChangePct !== undefined && h.dayChangePct > -100);
 
   // The percentage is rendered as the delta on portfolio value (cash +
   // holdings), so it has to be measured against that same base. Dividing by
@@ -106,18 +116,9 @@ const Summary = () => {
   // Real snapshot history; a brand-new account renders a flat baseline.
   // Returns null when there is nothing honest to draw.
   const chart = useMemo(() => {
-    let series = history.map((p) => p.value);
-    if (series.length < 2) {
-      // With no recorded history, the only thing we can draw is a flat line at
-      // the current value — which is only honest if we actually know it. When
-      // the account load failed, portfolioValue is a 0 fallback, and drawing
-      // that asserts a figure we never received, directly under stat cards
-      // that correctly read "—".
-      if (!accountKnown) return null;
-      const v = series[0] ?? portfolioValue;
-      series = [v, v];
-    }
-    const line = linePath(series, CW, CH, 14);
+    const series = history.map((p) => p.value);
+    if (series.length < 2) return null;
+    const line = linePath(series, CW, CH, 14, history.map(p => p.ts));
     const [lx, ly] = line.split(" L").pop()!.split(" ");
     return {
       line,
@@ -178,19 +179,19 @@ const Summary = () => {
         <StatCard
           label="Portfolio value"
           delta={<PnLValue text={money(deltaKnown, () => pct(dayPct))} />}
-          sub="shared account: cash + holdings"
+          sub="shared sandbox: cash + holdings"
         >
           {money(portfolioKnown, () => usdAbs(portfolioValue, 0))}
         </StatCard>
         <StatCard
-          label="Today's P/L"
+          label="24h market move"
           delta={<PnLValue text={money(deltaKnown, () => pct(dayPct))} showArrow />}
-          sub="unrealized, 24h"
+          sub="estimate for current holdings"
         >
-          {money(holdingsLoaded, () => signedUsd(dayPL, 0))}
+          {money(deltaKnown, () => signedUsd(dayPL, 0))}
         </StatCard>
         <StatCard label="Buying power" sub="available cash">
-          {money(accountKnown, () => usdAbs(balance, 0))}
+          {money(accountKnown, () => usdAbs(account!.availableBalance ?? balance, 0))}
         </StatCard>
       </div>
 
@@ -205,7 +206,7 @@ const Summary = () => {
               <PnLValue
                 text={money(deltaKnown, () => `${signedUsd(dayPL)} (${pct(dayPct)})`)}
               />
-              <span className="today">today</span>
+              <span className="today">estimated 24h move</span>
             </p>
           </div>
           <div className="range-tabs" role="tablist" aria-label="Chart range">

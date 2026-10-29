@@ -5,7 +5,7 @@ import { useModalA11y } from "./useModalA11y";
 import { useOrderTicket } from "./useOrderTicket";
 
 import "./BuySellModal.css";
-import { usd } from "./format";
+import { usd, quoteUsd } from "./format";
 
 interface BuySellModalProps {
   uid: string; // Gemini pair, e.g. "BTCUSD"
@@ -52,7 +52,7 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
           <span className="window-title">
             {base}
             <span className="live-quote">
-              {livePrice ? ` · ${usd(livePrice)}` : ""}
+              {livePrice ? ` · ${quoteUsd(livePrice)}` : ""}
             </span>
           </span>
           <div className="mode-tabs" role="tablist">
@@ -105,6 +105,7 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
                 name="qty"
                 id="qty"
                 aria-label={`Quantity in ${base}`}
+                disabled={submitting}
                 step="any"
                 min="0"
                 placeholder="0.00"
@@ -120,6 +121,7 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
                   name="price"
                   id="price"
                   aria-label="Limit price in USD"
+                  disabled={submitting}
                   step="any"
                   min="0"
                   onChange={(e) => setLimitPrice(e.target.value)}
@@ -136,7 +138,7 @@ const BuySellModal = ({ uid, initialMode = "BUY" }: BuySellModalProps) => {
                   // A <legend> names the fieldset, not the control inside it,
                   // so this field had no accessible name at all.
                   aria-label="Market price"
-                  value={livePrice ? usd(livePrice) : "…"}
+                  value={livePrice ? quoteUsd(livePrice) : "…"}
                 />
               </fieldset>
             )}

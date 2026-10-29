@@ -1,8 +1,8 @@
 // Money and quantity helpers shared by order validation and the Gemini
 // sandbox order client.
 //
-// All USD amounts are rounded to 2dp and all asset quantities to 8dp at
-// every mutation boundary so floating-point drift never accumulates.
+// Aggregate USD values use integer cents. Exchange price/quantity increments
+// are handled separately by decimal.ts without rounding user instructions.
 
 // A sell of "everything" can leave ~1e-12 behind after float math; any
 // holding at or below this is considered dust and gets cleaned up.

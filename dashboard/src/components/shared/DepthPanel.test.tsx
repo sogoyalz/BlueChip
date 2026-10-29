@@ -12,7 +12,7 @@ const book = (over: Record<string, unknown> = {}) => ({
     symbol: "BTCUSD",
     bids: [[50000, 1.5]],
     asks: [[50010, 2]],
-    updatedAt: 1,
+    updatedAt: Date.now(),
     ...over,
   },
 });
@@ -20,6 +20,12 @@ const book = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => vi.clearAllMocks());
 
 describe("DepthPanel", () => {
+  test("does not present old depth as live", async () => {
+    mockedGet.mockResolvedValue(book({ updatedAt: Date.now() - 60_000 }));
+    render(<DepthPanel symbol="BTCUSD" />);
+    expect(await screen.findByRole("status")).toHaveTextContent(/delayed/i);
+    expect(screen.queryByText("50,000.00")).not.toBeInTheDocument();
+  });
   test("renders nothing until the book has levels", async () => {
     mockedGet.mockResolvedValue(book({ bids: [], asks: [] }));
     const { container } = render(<DepthPanel symbol="BTCUSD" />);

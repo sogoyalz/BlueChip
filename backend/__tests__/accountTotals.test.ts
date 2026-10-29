@@ -8,7 +8,8 @@
  * the price cache has warmed.
  */
 jest.mock("../services/geminiPrivate", () => ({ getGeminiBalances: jest.fn() }));
-jest.mock("../services/priceFeed", () => ({ getPrice: jest.fn() }));
+jest.mock("../services/priceFeed", () => ({
+  DEFAULT_MAX_AGE_MS: 30_000, getPrice: jest.fn() }));
 
 import { getGeminiBalances } from "../services/geminiPrivate";
 import { getPrice } from "../services/priceFeed";
@@ -24,9 +25,25 @@ const bal = (currency: string, amount: string) => ({
 beforeEach(() => jest.clearAllMocks());
 
 describe("portfolioCents", () => {
+  test("keeps total and spendable cash separate", async () => {
+    mockedBalances.mockResolvedValue([{ ...bal("USD", "1000"), available: "100" }]);
+    expect(await getAccountTotals()).toMatchObject({ balance: 1000, availableBalance: 100, portfolioValue: 1000 });
+  });
+
+  test("zero unsupported balances do not invalidate the portfolio", async () => {
+    mockedBalances.mockResolvedValue([bal("USD", "1000"), bal("XYZ", "0")]);
+    mockedGetPrice.mockReturnValue(undefined);
+    expect((await portfolioCents()).complete).toBe(true);
+  });
+
+  test("old cached prices are incomplete instead of being recorded as current", async () => {
+    mockedBalances.mockResolvedValue([bal("BTC", "1")]);
+    mockedGetPrice.mockReturnValue({ price: 50000, updatedAt: Date.now() - 3_600_000 });
+    expect(await portfolioCents()).toMatchObject({ complete: false, holdingsCents: 0 });
+  });
   test("prices every holding when the cache has them all", async () => {
     mockedBalances.mockResolvedValue([bal("USD", "1000"), bal("BTC", "2")]);
-    mockedGetPrice.mockReturnValue({ price: 500 });
+    mockedGetPrice.mockReturnValue({ price: 500, updatedAt: Date.now() });
 
     const r = await portfolioCents();
     expect(r.complete).toBe(true);
@@ -52,7 +69,7 @@ describe("portfolioCents", () => {
       bal("USD", "100"), bal("BTC", "1"), bal("XYZ", "9"),
     ]);
     mockedGetPrice.mockImplementation((s: string) =>
-      s === "BTCUSD" ? { price: 200 } : undefined
+      s === "BTCUSD" ? { price: 200, updatedAt: Date.now() } : undefined
     );
 
     const r = await portfolioCents();
@@ -78,6 +95,7 @@ describe("getAccountTotals", () => {
     mockedGetPrice.mockReturnValue(undefined);
     await expect(getAccountTotals()).resolves.toEqual({
       balance: 50,
+      availableBalance: 50,
       portfolioValue: 50,
       complete: false,
     });

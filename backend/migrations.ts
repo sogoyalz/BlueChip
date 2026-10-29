@@ -65,6 +65,7 @@ export const migrate = async (): Promise<void> => {
         "RUN_MIGRATIONS; investigate before taking traffic. Found:",
       after ?? "no index"
     );
+    throw new Error("Required order idempotency index is missing");
   }
 
   // Check before dropping so the log reflects what actually happened — a

@@ -4,7 +4,7 @@
 
 A full-stack **crypto trading platform** built with the **MERN stack** (MongoDB, Express, React, Node.js). Anyone can sign up and trade Bitcoin, Ethereum, Solana and more — orders are placed for real against **Gemini's sandbox exchange** (real order matching, real fills, real order lifecycle) using a single shared sandbox account with test funds.
 
-> No real money is ever deposited, withdrawn, or at risk — every order settles on Gemini's **sandbox** (`api.sandbox.gemini.com`), a separate test environment from Gemini's production exchange. "BlueChip" is a fictional brand, not affiliated with Gemini or any real broker. Every trader shares one sandbox account, so balances, holdings, and order history are shared across all users.
+> No real money is ever deposited, withdrawn, or at risk — every order settles on Gemini's **sandbox** (`api.sandbox.gemini.com`), a separate test environment from Gemini's production exchange. "BlueChip" is a fictional brand, not affiliated with Gemini or any real broker. Every trader shares one sandbox account, so balances and holdings are shared across all users; local order history is scoped to its owner.
 
 📖 **New here? Read [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md)** — a complete walkthrough of every technology choice (and why), the architecture, and what every file in the repo does.
 
@@ -14,7 +14,7 @@ A full-stack **crypto trading platform** built with the **MERN stack** (MongoDB,
 
 Placing a limit order and watching the matching engine fill it against the live market:
 
-![Demo — limit order filled by the matcher](docs/screenshots/demo.gif)
+![Demo — sandbox limit order journey](docs/screenshots/demo.gif)
 
 | Trading dashboard | Real Gemini candles |
 |---|---|
@@ -28,7 +28,7 @@ Placing a limit order and watching the matching engine fill it against the live 
 - **Streaming end to end** — prices flow Gemini WebSocket → backend cache → **Server-Sent Events** → browser, with automatic fallback to polling
 - **Live order book depth** — real bids and asks maintained from Gemini's l2 feed, top-of-book with spread on every market page
 - **Real order execution** — market orders place as immediate-or-cancel limit orders crossed through Gemini's sandbox book; limit orders rest as real resting orders on the exchange. HMAC-SHA384-signed private API calls, a background sync loop reconciles local order status against Gemini's
-- **One shared sandbox account** — every signed-in user trades against the same Gemini sandbox account; balances, holdings, and order history are shared, not per-user
+- **One shared sandbox account** — every signed-in user trades against the same Gemini sandbox account; balances and holdings are shared; local orders are scoped to their owner
 - **Portfolio history** — periodic + per-fill snapshots of the shared account's value power a real performance chart
 - **Authentication** — signup & login with bcrypt-hashed passwords and JWT, gating who can place orders
 - **Public-ready hardening** — rate limiting (auth, orders, global), body-size caps, `/healthz`, always-visible sandbox disclaimer
@@ -52,16 +52,39 @@ BlueChip/
 | **dashboard** | React 19 + TypeScript, Material UI, Chart.js (+ financial charts), Axios | 3001 |
 | **backend** | Express 5, Mongoose, JWT, bcrypt, ws (Gemini WebSocket) | 3002 |
 
-**How prices flow:** the backend keeps one in-memory price cache. Gemini's public v2 market-data WebSocket streams trades into it (with heartbeat watchdog + exponential-backoff reconnect); a REST poller runs underneath as permanent fallback and supplies the 24h-change figure. The dashboard polls the cached prices — no user ever hits Gemini directly, so rate limits never scale with user count.
+**How prices flow:** the backend keeps one in-memory price cache. Gemini's public v2 market-data WebSocket streams trades into it (with heartbeat watchdog + exponential-backoff reconnect); a REST poller runs underneath as permanent fallback and supplies the 24h-change figure. The dashboard receives cached prices over SSE, with polling fallback — no user ever hits Gemini directly, so rate limits never scale with user count.
 
 **How trades settle:** for real, on Gemini's **sandbox** exchange. Placing an order signs an HMAC-SHA384 request (`X-GEMINI-APIKEY` / `X-GEMINI-PAYLOAD` / `X-GEMINI-SIGNATURE`) against `api.sandbox.gemini.com` using one shared API key for the whole app. MARKET orders are emulated as `immediate-or-cancel` limit orders priced to cross the book; LIMIT orders rest as real resting orders. A background sync loop (`services/orderSync.ts`) polls Gemini's order status every ~5s and reconciles local MongoDB order records (`OPEN` → `FILLED` / `PARTIALLY_FILLED` / `CANCELLED`) — Gemini itself is the source of truth for fills, matching, and balances. The backend refuses to boot if the private API base URL isn't pointed at the sandbox.
 
 ---
 
+## Order safety and current behavior
+
+Orders are recorded as `PENDING` **before** submission. A request ID identifies one set of instructions per user; reusing it with different instructions returns 409. Concurrent retries return the existing record. A lost or ambiguous exchange response becomes `UNKNOWN` (HTTP 202), and the background reconciler looks up the persisted exchange client ID. Unknown orders are never blindly resubmitted. Requests without a client ID are distinct new orders; clients should provide a stable ID for retries.
+
+Pair increments/minimums come from the sandbox symbol metadata. Valid decimal instructions are preserved; incompatible precision is rejected. Cash balance includes held funds; `availableBalance` is spendable. Stale prices make portfolio valuation incomplete and prevent misleading snapshots. Use the Orders filters and Newer/Older controls for complete history.
+
+## Root commands
+
+After configuring `backend/.env`:
+
+```bash
+nvm use
+npm run setup             # npm ci in all four app directories
+npm run setup:browsers    # install Chromium for browser tests
+npm run dev               # start the three applications
+npm run build             # typecheck/build all three apps
+npm test                  # unit and database integration suites
+npm run test:e2e          # compile backend and run browser journeys
+npm run check             # builds, all tests, and browser journeys
+```
+
+Each app retains its own lockfile. The root runner adds no runtime dependencies. See [operations](docs/OPERATIONS.md) for environment settings, startup indexes, unresolved orders, and rollout precautions.
+
 ## 🚀 Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) v18+ (global `fetch` is used for Gemini REST calls)
+- [Node.js](https://nodejs.org/) v22.22.2+ (see `.nvmrc`)
 - A [MongoDB](https://www.mongodb.com/atlas) database (Atlas or local)
 
 ### 1. Clone the repo
@@ -152,7 +175,7 @@ Base URL: `http://localhost:3002`
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/signup` | — | Register (seeds $100k simulated cash) |
+| `POST` | `/signup` | — | Register a login; shared sandbox funds are unchanged |
 | `POST` | `/login` | — | Log in and receive a JWT |
 | `POST` | `/` | — | Verify the current auth token |
 | `GET` | `/healthz` | — | Health: WebSocket + price freshness |
@@ -173,10 +196,15 @@ Base URL: `http://localhost:3002`
 query string or the request body — both leak into access logs, proxy logs, browser
 history and error reports.
 
-**Place an order:**
+`GET /api/orders` accepts `status=all|open|pending`, an optional `symbol`, and a `cursor`. `X-Next-Cursor` carries the next page; `X-Total-Count` is the total for the selected filter. The body remains an array. `/livez` checks process liveness; `/readyz` returns 503 when the database is disconnected.
+
+Orders now link to a details page with up to 50 recent local events and reconciliation diagnostics. Explicitly allowlisted operators can inspect the unresolved queue and schedule original-order status lookups; see [operator setup](docs/OPERATIONS.md#order-diagnostics-and-operator-access). `npm run validate:live` runs read-only public sandbox/database checks; `npm run rehearse:restore` verifies fixture dump/restore on temporary databases. [Recorded validation](docs/LIVE_VALIDATION_2026-10-29.md) records the original inspection and later live sandbox verification; [predeployment status](docs/PREDEPLOYMENT_STATUS.md) records verified indexes, operator access, and remaining AWS deployment work.
+
+
+**Place an order** (include `X-Requested-With: XMLHttpRequest` and authentication):
 ```json
 POST /api/orders
-{ "symbol": "BTCUSD", "side": "BUY", "type": "LIMIT", "qty": 0.05, "limitPrice": 64000 }
+{ "symbol": "BTCUSD", "side": "BUY", "type": "LIMIT", "qty": 0.05, "limitPrice": 64000, "clientOrderId": "one-stable-id-per-order" }
 ```
 
 ---
@@ -184,21 +212,21 @@ POST /api/orders
 ## 🧪 Testing
 
 ```bash
-cd backend && npx jest      # engine, order sync, feeds, routes (100+ tests, no DB needed)
+cd backend && npx jest      # unit and integration tests; temporary MongoDB is downloaded on first run
 cd dashboard && npm test    # dashboard component tests
 cd frontend && npm test     # landing-site component tests
 ```
 
-Backend tests mock Mongoose models, the price feed, and the Gemini sandbox client, so they run fast and offline — including order-placement edge cases (IOC rejects/partial fills, cancel-vs-fill races) against a mocked Gemini response, not a real sandbox call.
+Backend unit tests mock exchange/network boundaries. Persistence and recovery integration suites use a real temporary MongoDB, including concurrent submissions, response loss, restart recovery, and stable pagination. First use may download a MongoDB binary. The browser suite builds both apps and uses a local exchange stub; no live trades are submitted.
 
 ---
 
 ## ☁️ Deploying (when you're ready)
 
-The repo is deploy-ready but nothing is deployed by default.
+Deployment configuration is included; a live deployment is not verified by this repository. Read [the operations runbook](docs/OPERATIONS.md) before deploying.
 
 1. **MongoDB Atlas** — create a free M0 cluster, get the connection string.
-2. **Backend → Render** (free tier): root directory `backend`, build `npm install && npm run build`, start `npm run serve`. Env: `MONGO_URL`, `TOKEN_KEY`, `CORS_ORIGINS` (both Netlify URLs).
+2. **Backend → Render** (free tier): root directory `backend`, build `npm ci && npm run build`, start `npm run serve`. Env: `MONGO_URL`, `TOKEN_KEY`, `CORS_ORIGINS` (both Netlify URLs).
 3. **Frontends → Netlify** (two sites): `frontend/netlify.toml` and `dashboard/netlify.toml` are already in place. Set the `VITE_*` env vars per site (they're baked at build time; the old `REACT_APP_*` names still work).
 4. **Keep-alive**: point a free uptime pinger (UptimeRobot / cron-job.org) at `GET /healthz` every ~10 min — on Render's free tier the server sleeps when idle, which pauses order syncing and snapshots.
 
@@ -233,7 +261,7 @@ frontend/src/landing_page/
 dashboard/src/components/
 ├── Dashboard.tsx  Holdings.tsx  Orders.tsx
 ├── Funds.tsx  WatchList.tsx  Summary.tsx  MarketDetail.tsx
-├── PricesContext.tsx  (shared live-price poll)
+├── PricesContext.tsx  (SSE prices with polling fallback)
 └── shared/  (BuySellModal, CandleChart, DataTable, ...)
 ```
 
@@ -242,3 +270,5 @@ dashboard/src/components/
 ## 📝 License
 
 This project is for educational purposes. Not for commercial use.
+
+Deployment packaging and its opt-in local HTTPS browser check are documented in [deploy/README.md](deploy/README.md). Run `npm run test:deployment` with Docker running to verify the `/app/` dashboard and shared-origin authentication.

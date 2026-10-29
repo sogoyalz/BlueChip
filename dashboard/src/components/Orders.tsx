@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useContext } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect, useCallback, useContext, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { toast } from "react-toastify";
 
@@ -9,10 +9,12 @@ import ConfirmDialog from "./shared/ConfirmDialog";
 import GeneralContext from "./GeneralContext";
 import { Order, OrderStatus, isResting } from "../types";
 import { API_URL } from "../config";
-import { num } from "./shared/format";
+import { price as formatPrice } from "./shared/format";
 
 
 const STATUS_CLASS: Record<OrderStatus, string> = {
+  PENDING: "open",
+  UNKNOWN: "open",
   FILLED: "filled",
   PARTIALLY_FILLED: "filled",
   OPEN: "open",
@@ -24,16 +26,25 @@ const Orders = () => {
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalOrders, setTotalOrders] = useState<number | null>(null);
+  const [filter, setFilter] = useState("all");
+  const [cursor, setCursor] = useState("");
+  const [previousCursors, setPreviousCursors] = useState<string[]>([]);
+  const [nextCursor, setNextCursor] = useState("");
+  const requestVersion = useRef(0);
   const navigate = useNavigate();
 
   const fetchOrders = useCallback((showSpinner: boolean) => {
+    const version = ++requestVersion.current;
     if (showSpinner) setLoading(true);
     axios
       .get<Order[]>(`${API_URL}/api/orders`, {
         withCredentials: true,
+        params: { status: filter, ...(cursor ? { cursor } : {}) },
       })
       .then((res) => {
+        if (version !== requestVersion.current) return;
         setAllOrders(res.data);
+        setNextCursor(res.headers?.["x-next-cursor"] ?? "");
         // The list is one capped page, so its length is a lower bound on the
         // user's order count. The backend sends the real total; fall back to
         // the page length only when the header is absent.
@@ -41,19 +52,20 @@ const Orders = () => {
         setTotalOrders(Number.isFinite(total) ? total : res.data.length);
       })
       .catch((err) => {
+        if (version !== requestVersion.current) return;
         console.error("Failed to load orders:", err);
         if (showSpinner) {
           toast.error("Could not load orders.", { toastId: "orders-error" });
         }
       })
       .finally(() => {
-        if (showSpinner) setLoading(false);
+        if (version === requestVersion.current) setLoading(false);
       });
-  }, []);
+  }, [cursor, filter]);
 
   // Refetch as soon as an order is accepted, rather than waiting up to 10s for
   // the next poll and leaving the user wondering where it went.
-  const { orderVersion } = useContext(GeneralContext);
+  const { orderVersion, notifyOrderPlaced } = useContext(GeneralContext);
   useEffect(() => {
     if (orderVersion > 0) fetchOrders(false);
   }, [orderVersion, fetchOrders]);
@@ -64,7 +76,7 @@ const Orders = () => {
     fetchOrders(true);
     // Quiet refresh so limit fills show up while watching.
     const timer = setInterval(() => fetchOrders(false), 10000);
-    return () => clearInterval(timer);
+    return () => { clearInterval(timer); requestVersion.current += 1; };
   }, [fetchOrders]);
 
   // The order awaiting confirmation, and the one currently being cancelled.
@@ -80,6 +92,7 @@ const Orders = () => {
         {},
         { withCredentials: true }
       );
+      notifyOrderPlaced();
       // The exchange is the source of truth: an order can fill in the moment
       // before the cancel lands, and the route returns 200 saying so. Reporting
       // that as "Cancelled" would tell the user the opposite of what happened.
@@ -136,11 +149,11 @@ const Orders = () => {
         // for a partially-filled order would say nothing executed, which is
         // false. The qty column carries the resting remainder.
         if (o.status === "OPEN") {
-          return o.type === "LIMIT" ? `${num(o.limitPrice)} (limit)` : "—";
+          return o.type === "LIMIT" ? `${formatPrice(o.limitPrice, 18)} (limit)` : "—";
         }
         // Otherwise, if any of it traded, the price it traded at is the fact.
-        if (typeof o.fillPrice === "number") return num(o.fillPrice);
-        return o.type === "LIMIT" ? `${num(o.limitPrice)} (limit)` : "—";
+        if (typeof o.fillPrice === "number") return formatPrice(o.fillPrice, 18);
+        return o.type === "LIMIT" ? `${formatPrice(o.limitPrice, 18)} (limit)` : "—";
       },
     },
     {
@@ -149,9 +162,9 @@ const Orders = () => {
       render: (o) => (
         <span
           className={`status-chip ${STATUS_CLASS[o.status]}`}
-          title={o.status === "REJECTED" ? o.reason : undefined}
+          title={o.reason}
         >
-          {o.status}
+          {o.status === "UNKNOWN" ? "Awaiting confirmation" : o.status === "PENDING" ? "Submitting" : o.status}
         </span>
       ),
     },
@@ -166,6 +179,7 @@ const Orders = () => {
           minute: "2-digit",
         }),
     },
+    { key: "details", label: "Details", render: (o) => <Link className="order-detail-link" to={`/orders/${o._id}`} aria-label={`View ${o.symbol} order ${o._id}`}>Details</Link> },
     {
       key: "actions",
       label: "Actions",
@@ -195,6 +209,20 @@ const Orders = () => {
         {openCount > 0 && ` · ${openCount} open`}
       </h1>
 
+      <label>
+        Show orders{" "}
+        <select aria-label="Order status filter" value={filter} onChange={event => {
+          setFilter(event.target.value); setCursor(""); setPreviousCursors([]);
+        }}>
+          <option value="all">All orders</option>
+          <option value="open">Open orders</option>
+          <option value="pending">Awaiting confirmation</option>
+        </select>
+      </label>
+      {allOrders.some(order => order.status === "UNKNOWN" || order.status === "PENDING") && (
+        <p role="status">Some orders are awaiting exchange confirmation. They remain tracked; do not place replacements.</p>
+      )}
+
       <DataTable
         label="Your orders"
         columns={columns}
@@ -211,6 +239,16 @@ const Orders = () => {
         }
       />
 
+      <nav aria-label="Order history pages" style={{ display: "flex", gap: 12, marginTop: 16 }}>
+        <button className="btn btn-grey" disabled={loading || previousCursors.length === 0} onClick={() => {
+          setCursor(previousCursors[previousCursors.length - 1]);
+          setPreviousCursors(previousCursors.slice(0, -1));
+        }}>Newer orders</button>
+        <button className="btn btn-grey" disabled={loading || !nextCursor} onClick={() => {
+          setPreviousCursors([...previousCursors, cursor]); setCursor(nextCursor);
+        }}>Older orders</button>
+      </nav>
+
       {pendingCancel && (
         <ConfirmDialog
           title="Cancel this order?"
@@ -226,7 +264,7 @@ const Orders = () => {
               <span className="confirm-detail">
                 {pendingCancel.side} {pendingCancel.qty} {pendingCancel.symbol}
                 {typeof pendingCancel.limitPrice === "number"
-                  ? ` at ${num(pendingCancel.limitPrice)}`
+                  ? ` at ${formatPrice(pendingCancel.limitPrice, 18)}`
                   : ""}
               </span>
             </>

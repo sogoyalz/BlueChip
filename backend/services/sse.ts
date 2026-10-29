@@ -9,6 +9,7 @@
 
 import { Response } from "express";
 import { getAllPrices } from "./priceFeed";
+import { envInteger } from "../config/runtime";
 
 // Per-process: a second instance holds its own client set, and the per-IP cap
 // below is then enforced per instance rather than overall. See render.yaml.
@@ -23,7 +24,17 @@ export const DEFAULT_BROADCAST_MS = 2_000;
 // surfaces half-open sockets: the write throws and the client is reaped.
 export const KEEPALIVE_MS = 25_000;
 // Max concurrent streams per IP. Env-overridable so tests/ops can tune it.
-export const MAX_STREAMS_PER_IP = Number(process.env.MAX_SSE_PER_IP) || 5;
+export const MAX_STREAMS_PER_IP = envInteger("MAX_SSE_PER_IP", 5, 1, 1000);
+const MAX_STREAMS = envInteger("MAX_SSE_CLIENTS", 1000, 1, 10_000);
+
+function writeFrame(res: Response, frame: string): boolean {
+  try {
+    if (res.write(frame) !== false) return true;
+  } catch { /* closed or slow client */ }
+  removeClient(res);
+  try { res.end(); } catch { /* already closed */ }
+  return false;
+}
 
 /** One SSE frame: `event: <name>\ndata: <json>\n\n`. */
 export function formatEvent(event: string, data: unknown): string {
@@ -44,19 +55,13 @@ function pricesFrame(): string {
  */
 export function addClient(res: Response, ip = "unknown"): boolean {
   const current = perIp.get(ip) ?? 0;
-  if (current >= MAX_STREAMS_PER_IP) return false;
+  if (current >= MAX_STREAMS_PER_IP || clients.size >= MAX_STREAMS) return false;
 
   clients.add(res);
   perIp.set(ip, current + 1);
   // Remember the IP on the response so removeClient can decrement the right one.
   (res as Response & { _sseIp?: string })._sseIp = ip;
-  try {
-    res.write(pricesFrame());
-  } catch {
-    removeClient(res);
-    return false;
-  }
-  return true;
+  return writeFrame(res, pricesFrame());
 }
 
 export function removeClient(res: Response): void {
@@ -76,11 +81,7 @@ export function broadcastPrices(): void {
   if (clients.size === 0) return;
   const frame = pricesFrame();
   for (const res of clients) {
-    try {
-      res.write(frame);
-    } catch {
-      removeClient(res); // dead socket — drop it (and free its IP slot)
-    }
+    writeFrame(res, frame);
   }
 }
 
@@ -88,11 +89,7 @@ export function broadcastPrices(): void {
 export function sendKeepAlive(): void {
   if (clients.size === 0) return;
   for (const res of clients) {
-    try {
-      res.write(": keep-alive\n\n");
-    } catch {
-      removeClient(res); // half-open socket — drop it (and free its IP slot)
-    }
+    writeFrame(res, ": keep-alive\n\n");
   }
 }
 

@@ -284,7 +284,7 @@ describe("BuySellModal idempotency key", () => {
     enterQty("0.5"); // different order now
     clickBuy();
     await waitFor(() => expect(mockedPost).toHaveBeenCalledTimes(2));
-    expect(mockedPost.mock.calls[1][1].qty).toBe(0.5);
+    expect(mockedPost.mock.calls[1][1].qty).toBe("0.5");
     expect(mockedPost.mock.calls[1][1].clientOrderId).not.toBe(firstKey);
   });
 });

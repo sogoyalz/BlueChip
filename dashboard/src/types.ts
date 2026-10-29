@@ -4,6 +4,8 @@
 export type OrderSide = "BUY" | "SELL";
 export type OrderType = "MARKET" | "LIMIT";
 export type OrderStatus =
+  | "PENDING"
+  | "UNKNOWN"
   | "OPEN"
   | "PARTIALLY_FILLED"
   | "FILLED"
@@ -52,6 +54,7 @@ export interface Account {
   username: string;
   email: string;
   balance: number;
+  availableBalance?: number;
   portfolioValue?: number;
   createdAt?: string;
   /** False when a holding could not be priced, so portfolioValue omits it. */

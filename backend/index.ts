@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { createHostedApp } from "./hosting";
 
 import express from "express";
 import mongoose from "mongoose";
@@ -11,6 +12,8 @@ import cookieParser from "cookie-parser";
 
 import authRoute from "./routes/AuthRoute";
 import marketRoute from "./routes/MarketRoute";
+import operationsRoute from "./routes/OperationsRoute";
+import { operatorIds } from "./middlewares/OperatorMiddleware";
 import orderRoute from "./routes/OrderRoute";
 import portfolioRoute from "./routes/PortfolioRoute";
 import { startPolling } from "./services/priceFeed";
@@ -29,6 +32,7 @@ import { isFresh } from "./services/priceFeed";
 import { fetchSymbols } from "./services/gemini";
 import { log } from "./util/logger";
 import { validateSymbolsAgainstGemini } from "./config/symbols";
+import { OrdersModel } from "./model/OrdersModel";
 
 // Last-resort safety nets. Several paths are fire-and-forget (void
 // snapshotNow(), timers); without these, a stray rejection would crash the
@@ -73,7 +77,7 @@ app.use(
 // var, and an untrimmed " b.com" matches no origin — a silent 401-everywhere
 // login failure in production rather than a visible misconfiguration.
 const corsOrigins = (
-  process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:3001"
+  process.env.CORS_ORIGINS || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000,http://localhost:3001"
 )
   .split(",")
   .map((origin) => origin.trim())
@@ -88,7 +92,7 @@ app.use(
     // Cross-origin JS can only read the handful of "simple" response headers
     // unless they are named here. Without this the dashboard sees the header
     // as undefined and silently falls back to counting the page it received.
-    exposedHeaders: ["X-Total-Count"],
+    exposedHeaders: ["X-Total-Count", "X-Next-Cursor"],
     credentials: true, // <-- REQUIRED so cookies are allowed
   })
 );
@@ -109,6 +113,7 @@ app.use((req, res, next) => {
 app.use(["/signup", "/login"], authLimiter); // brute-force protection
 app.use("/", authRoute); // mounts /signup, /login, /
 app.use("/", marketRoute); // mounts /api/symbols, /api/prices (public)
+app.use("/", operationsRoute);
 app.use("/", orderRoute); // mounts /api/orders* (auth)
 app.use("/", portfolioRoute); // mounts /api/portfolio/history (auth)
 app.use("/", accountRoute); // mounts /api/holdings, /api/account (auth)
@@ -120,6 +125,16 @@ app.get("/healthz", (_req, res) => {
     ok: true,
     wsConnected: isWsConnected(),
     pricesFresh: SYMBOLS.some((s) => isFresh(s.symbol)),
+  });
+});
+
+app.get("/livez", (_req, res) => res.json({ ok: true }));
+app.get("/readyz", (_req, res) => {
+  const databaseReady = mongoose.connection.readyState === 1;
+  res.status(databaseReady ? 200 : 503).json({
+    ready: databaseReady,
+    marketDataFresh: SYMBOLS.some(s => isFresh(s.symbol)),
+    wsConnected: isWsConnected(),
   });
 });
 
@@ -151,12 +166,16 @@ const start = async (): Promise<void> => {
           "orphaned fill will not reach anyone.",
       });
     }
+    operatorIds(); // Refuse a malformed operator allowlist before serving traffic.
+    const listener = process.env.STATIC_SITE_ROOT ? createHostedApp(app, process.env.STATIC_SITE_ROOT) : app;
     await mongoose.connect(uri);
     console.log("db connected");
     if (process.env.RUN_MIGRATIONS === "true") {
       console.log("RUN_MIGRATIONS=true — running one-shot data-model migration");
       await migrate();
     }
+    // Do not take traffic until the unique intent index protects submissions.
+    await OrdersModel.createIndexes();
     // Drop curated symbols Gemini no longer trades, then start the shared
     // price poller. Only when run directly — tests import app without timers.
     await validateSymbolsAgainstGemini(fetchSymbols);
@@ -167,7 +186,7 @@ const start = async (): Promise<void> => {
     startOrderSync();
     startSnapshots();
     startSseBroadcast();
-    const server = app.listen(PORT, () => {
+    const server = listener.listen(PORT, () => {
       console.log(`app started on port ${PORT}`);
     });
     installShutdownHandlers(server);

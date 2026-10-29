@@ -3,7 +3,7 @@
  * order state (Gemini itself does all the matching now).
  */
 jest.mock("../model/OrdersModel", () => ({
-  OrdersModel: { find: jest.fn(), findOneAndUpdate: jest.fn() },
+  OrdersModel: { find: jest.fn(), findOneAndUpdate: jest.fn(), updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }) },
 }));
 jest.mock("../services/geminiPrivate", () => ({
   getGeminiActiveOrders: jest.fn(),
@@ -347,3 +347,14 @@ describe("active-order batching", () => {
   });
 });
 
+
+
+test.each([null, "", "0", "-1"])("does not fabricate an execution price from %p", async raw => {
+  const order = restingOrder({});
+  findReturns([order]);
+  mockedGetStatus.mockResolvedValue(geminiStatus({ executed_amount: "0.1", remaining_amount: "0", avg_execution_price: raw, is_live: false }));
+  await tick();
+  expect(order.status).toBe("FILLED");
+  expect(order.filledQty).toBe(0.1);
+  expect(order.fillPrice).toBeUndefined();
+});

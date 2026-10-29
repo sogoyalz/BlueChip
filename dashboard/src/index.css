@@ -1367,6 +1367,20 @@ input:focus-visible {
   background: var(--accent-hover);
 }
 
+.mobile-market-shortcut { display: none; }
+
+@media (max-width: 640px) {
+  .topbar-container { height: auto; min-height: 58px; }
+  .menu-container { display: grid; grid-template-columns: 50px 1fr; gap: 8px; padding: 8px 16px; }
+  .menus { display: contents; }
+  .menus > nav { grid-column: 1 / -1; grid-row: 2; width: 100%; }
+  .menus ul { width: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: visible; }
+  .menus li { min-width: 0; text-align: center; }
+  .menu { padding: 10px 4px; font-size: 0.8rem; }
+  .menus > hr { display: none; }
+  .profile-wrap { grid-column: 2; grid-row: 1; justify-self: end; }
+}
+
 /* ============================================================
    Responsive
    ============================================================ */
@@ -1385,6 +1399,7 @@ input:focus-visible {
 }
 
 @media (max-width: 860px) {
+  .mobile-market-shortcut { display: inline-block; margin-bottom: 20px; color: var(--accent-ink); }
   .dashboard-container {
     flex-direction: column;
     min-height: auto;
@@ -1427,3 +1442,19 @@ input:focus-visible {
     width: 100%;
   }
 }
+
+/* Order investigation views share the dashboard's scroll and mobile layout. */
+.diagnostic-facts { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr); gap: 10px 20px; }
+.diagnostic-facts dd { margin: 0; overflow-wrap: anywhere; }
+.order-timeline { padding-left: 24px; }
+.order-timeline li { margin-block: 18px; overflow-wrap: anywhere; }
+.order-timeline time { color: var(--ink-2); }
+.operations-pages { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+@media (max-width: 640px) { .menus nav ul:has(a[href$="/operations"]) { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+.order-detail-link { color: var(--accent-ink); text-underline-offset: 3px; }
+.order-diagnostics > p, .order-operations > p { margin-block: 12px; }
+.order-diagnostics > h2 { margin-block: 24px 12px; }
+
+/* Keep notification text readable throughout the entrance animation. */
+.Toastify__toast-container .Toastify__toast-theme--light { color: #555; }

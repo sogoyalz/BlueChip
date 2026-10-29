@@ -1,6 +1,6 @@
 // Curated list of Gemini spot pairs the platform supports. Kept small so
 // the REST poller stays well under Gemini's public rate limit
-// (~8 symbols x 6 polls/min = 48 req/min vs the 120/min cap).
+// (10 symbols x 6 polls/min = 60 req/min vs the 120/min cap).
 
 export interface SymbolInfo {
   symbol: string; // Gemini pair id, e.g. "BTCUSD"
@@ -15,6 +15,9 @@ export const SYMBOLS: SymbolInfo[] = [
   { symbol: "DOGEUSD", base: "DOGE", name: "Dogecoin" },
   { symbol: "XRPUSD", base: "XRP", name: "XRP" },
   { symbol: "LTCUSD", base: "LTC", name: "Litecoin" },
+  // New sandbox accounts also hold these assets; keep their valuation priced.
+  { symbol: "BCHUSD", base: "BCH", name: "Bitcoin Cash" },
+  { symbol: "ZECUSD", base: "ZEC", name: "Zcash" },
   { symbol: "LINKUSD", base: "LINK", name: "Chainlink" },
   { symbol: "AVAXUSD", base: "AVAX", name: "Avalanche" },
 ];

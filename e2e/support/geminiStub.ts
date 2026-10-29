@@ -48,6 +48,9 @@ export async function startGeminiStub(): Promise<GeminiStub> {
     };
 
     if (path === "/v1/symbols") return send(PAIRS);
+    const details = path.match(/^\/v1\/symbols\/details\/([a-z]+)$/);
+    if (details) return send({ symbol: details[1], tick_size: 0.00000001,
+      quote_increment: 0.01, min_order_size: "0.00001", status: "open" });
 
     const ticker = path.match(/^\/v2\/ticker\/([a-z]+)$/);
     if (ticker) {
@@ -103,7 +106,8 @@ export async function startGeminiStub(): Promise<GeminiStub> {
     if (path === "/v1/orders") return send([]);
 
     if (path === "/v1/order/status") {
-      const found = placed.find((o) => o.order_id === payload.order_id);
+      const found = placed.find((o) => payload.client_order_id
+        ? o.client_order_id === payload.client_order_id : o.order_id === payload.order_id);
       return found ? send(found) : send({ message: "not found" }, 404);
     }
 

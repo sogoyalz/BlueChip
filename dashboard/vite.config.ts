@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  base: process.env.VITE_BASE_PATH || "/",
 
   // The deployment already sets REACT_APP_* in Netlify and in the E2E harness.
   // Exposing that prefix alongside Vite's own means the move off Create React

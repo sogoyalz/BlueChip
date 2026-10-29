@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { test, expect, Page } from "@playwright/test";
 
 import { URLS } from "../support/stack";
@@ -57,7 +58,7 @@ async function hoverThenClick(page: Page, locator: ReturnType<Page["getByRole"]>
 }
 
 test.describe("the order journey, end to end", () => {
-  test("sign up, place an order, and see it in the list", async ({ page }) => {
+  test("sign up, place an order, and see it in the list", async ({ page }, testInfo) => {
     await signUp(page);
 
     // Landed on the dashboard as a real session, not bounced back to login.
@@ -94,6 +95,21 @@ test.describe("the order journey, end to end", () => {
     await expect(row).toContainText(/buy/i);
     await expect(row).toContainText("0.25");
     await expect(row).toContainText(/filled/i);
+    await row.getByRole("link", { name: /View BTCUSD order/ }).click();
+    await expect(page.getByRole("heading", { name: "Order details" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Recent activity" })).toBeVisible();
+    await expect(page.getByText(/intent recorded/)).toBeVisible();
+    await expect(page.getByText(/exchange observed/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Schedule status lookup" })).toHaveCount(0);
+    const denied = await page.request.get(`${URLS.api}/api/operations/orders`);
+    expect(denied.status()).toBe(403);
+    const accessibility = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"]).analyze();
+    expect(accessibility.violations).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath("order-details-desktop.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole("heading", { name: "Order details" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("order-details-mobile.png"), fullPage: true });
   });
 
   test("the session survives a reload, and logout actually ends it", async ({ page }) => {

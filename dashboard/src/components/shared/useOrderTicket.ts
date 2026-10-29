@@ -6,7 +6,7 @@ import GeneralContext from "../GeneralContext";
 import { usePrices } from "../PricesContext";
 import { Account, Order, OrderType, TradeMode } from "../../types";
 import { API_URL } from "../../config";
-import { usd } from "./format";
+import { quoteUsd } from "./format";
 
 /**
  * Everything about placing an order, separated from everything about drawing
@@ -32,6 +32,7 @@ export function useOrderTicket(uid: string, initialMode: TradeMode) {
   // reused across retries (so a retry after a slow-but-successful request
   // doesn't place a second order), cleared once an order is accepted.
   const clientOrderIdRef = useRef<string | null>(null);
+  const submitLock = useRef(false);
 
   // Reusing the key across a retry is the point — it's what stops a
   // slow-but-successful first attempt from double-filling. But the moment any
@@ -49,7 +50,7 @@ export function useOrderTicket(uid: string, initialMode: TradeMode) {
   useEffect(() => {
     axios
       .get<Account>(`${API_URL}/api/account`, { withCredentials: true })
-      .then((res) => setBalance(res.data.balance))
+      .then((res) => setBalance(res.data.availableBalance ?? res.data.balance))
       .catch((err) => console.error("Failed to load balance:", err));
   }, []);
 
@@ -70,7 +71,7 @@ export function useOrderTicket(uid: string, initialMode: TradeMode) {
   const submit = async () => {
     // A second click while the first request is still in flight would place a
     // second order; the button is disabled, but the guard belongs here too.
-    if (submitting) return;
+    if (submitLock.current) return;
 
     // Mirror the server's validation so bad input fails fast with a clear
     // message instead of a generic request error.
@@ -83,6 +84,7 @@ export function useOrderTicket(uid: string, initialMode: TradeMode) {
       return;
     }
     setSubmitting(true);
+    submitLock.current = true;
     // One key per submission, stable across retries of that submission.
     if (!clientOrderIdRef.current) {
       clientOrderIdRef.current =
@@ -97,32 +99,38 @@ export function useOrderTicket(uid: string, initialMode: TradeMode) {
           symbol: uid,
           side: mode,
           type: orderType,
-          qty: numQty,
+          // Preserve the entered decimal; the server validates pair increments.
+          qty,
           clientOrderId: clientOrderIdRef.current,
-          ...(orderType === "LIMIT" ? { limitPrice: numLimit } : {}),
+          ...(orderType === "LIMIT" ? { limitPrice } : {}),
         },
         { withCredentials: true }
       );
       // The server responded with an order outcome — this attempt is done, so
       // the next submission is a genuinely new order and needs a fresh key.
-      clientOrderIdRef.current = null;
       const order = data.order;
+      if (order.status !== "PENDING" && order.status !== "UNKNOWN") clientOrderIdRef.current = null;
       // Announce before the toasts: whatever the outcome, the server has
       // recorded it and the orders list should stop showing a stale view.
       generalContext.notifyOrderPlaced();
-      if (order.status === "FILLED") {
+      if (order.status === "PENDING" || order.status === "UNKNOWN") {
+        toast.info("Exchange confirmation pending. Track this order in Orders; do not place a replacement.");
+        generalContext.closeTradeWindow();
+      } else if (order.status === "FILLED") {
         toast.success(
-          `${isBuy ? "Bought" : "Sold"} ${order.qty} ${base} at ${usd(order.fillPrice!)}`
+          `${isBuy ? "Bought" : "Sold"} ${order.qty} ${base} at ${quoteUsd(order.fillPrice)}`
         );
         generalContext.closeTradeWindow();
-      } else if (order.status === "PARTIALLY_FILLED") {
-        // A market order is immediate-or-cancel: whatever didn't cross the
-        // book is gone, so this is the final outcome, not a pending one.
+      } else if (order.status === "PARTIALLY_FILLED" || order.status === "CANCELLED" && (order.filledQty ?? 0) > 0) {
         const filled = order.filledQty ?? order.qty;
-        toast.success(
-          `${isBuy ? "Bought" : "Sold"} ${filled} of ${order.qty} ${base} at ` +
-            `${usd(order.fillPrice!)} — the rest didn't fill.`
-        );
+        const restIsLive = order.status === "PARTIALLY_FILLED" && (order.type ?? orderType) === "LIMIT";
+        if (restIsLive) {
+          toast.info(`Limit ${mode.toLowerCase()}: ${filled} of ${order.qty} ${base} filled at ` +
+            `${quoteUsd(order.fillPrice)}, the rest resting @ ${quoteUsd(order.limitPrice)}`);
+        } else {
+          toast.success(`${isBuy ? "Bought" : "Sold"} ${filled} of ${order.qty} ${base} at ` +
+            `${quoteUsd(order.fillPrice)} — the rest didn't fill.`);
+        }
         generalContext.closeTradeWindow();
       } else if (order.status === "OPEN") {
         // A limit order that partly crossed on the way in comes back OPEN with
@@ -134,9 +142,12 @@ export function useOrderTicket(uid: string, initialMode: TradeMode) {
         toast.info(
           alreadyFilled > 0
             ? `Limit ${mode.toLowerCase()}: ${alreadyFilled} of ${order.qty} ${base} ` +
-              `filled at ${usd(order.fillPrice!)}, the rest resting @ ${usd(order.limitPrice!)}`
-            : `Limit ${mode.toLowerCase()} placed: ${order.qty} ${base} @ ${usd(order.limitPrice!)}`
+              `filled at ${quoteUsd(order.fillPrice)}, the rest resting @ ${quoteUsd(order.limitPrice)}`
+            : `Limit ${mode.toLowerCase()} placed: ${order.qty} ${base} @ ${quoteUsd(order.limitPrice)}`
         );
+        generalContext.closeTradeWindow();
+      } else if (order.status === "CANCELLED") {
+        toast.info("Order cancelled without a fill.");
         generalContext.closeTradeWindow();
       } else {
         // REJECTED — an order outcome, not a request error
@@ -152,6 +163,7 @@ export function useOrderTicket(uid: string, initialMode: TradeMode) {
       // same key — if the first attempt actually reached the exchange, the
       // retry dedupes instead of placing a second order.
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
     }
   };

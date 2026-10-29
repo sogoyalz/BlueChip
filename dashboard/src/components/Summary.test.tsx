@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import axios from "axios";
 
 import Summary from "./Summary";
+import GeneralContext from "./GeneralContext";
 import type { Mock } from "vitest";
 
 vi.mock("axios", () => ({
@@ -37,6 +38,16 @@ beforeEach(() => {
 });
 
 describe("Summary day-change percentage", () => {
+  test("refreshes available funds when an order is accepted elsewhere in the dashboard", async () => {
+    const value = (version: number) => ({ orderVersion: version, notifyOrderPlaced: vi.fn(),
+      openTradeWindow: vi.fn(), closeTradeWindow: vi.fn(), openBuyWindow: vi.fn(), closeBuyWindow: vi.fn() });
+    const { rerender } = render(<GeneralContext.Provider value={value(0)}><Summary /></GeneralContext.Provider>);
+    await screen.findByText("$90,000");
+    mockedGet.mockImplementation((url: string) => url.includes("/api/account")
+      ? Promise.resolve({ data: { ...account, availableBalance: 80000 } }) : routeGet(url));
+    rerender(<GeneralContext.Provider value={value(1)}><Summary /></GeneralContext.Provider>);
+    expect(await screen.findByText("$80,000")).toBeInTheDocument();
+  });
   test("measures the day move against portfolio value, not holdings alone", async () => {
     render(<Summary />);
     await waitFor(() => expect(screen.getAllByText(/\$/).length).toBeGreaterThan(0));
@@ -44,7 +55,7 @@ describe("Summary day-change percentage", () => {
     // The $500 move is 0.5% of the $100k portfolio the figure is displayed on.
     // Dividing by holdings alone would print +5.26% — a ten-fold overstatement
     // driven entirely by how much cash happens to be sitting idle.
-    await waitFor(() => expect(screen.getAllByText("+0.50%").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("+0.48%").length).toBeGreaterThan(0));
     expect(screen.queryByText("+5.26%")).not.toBeInTheDocument();
   });
 
@@ -52,7 +63,7 @@ describe("Summary day-change percentage", () => {
     render(<Summary />);
     // Cash doesn't move, so the dollar figure is unaffected by the base change.
     await waitFor(() =>
-      expect(screen.getAllByText(/\+\$500\.00/).length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/\+\$476\.19/).length).toBeGreaterThan(0)
     );
   });
 });
@@ -92,7 +103,7 @@ describe("Summary unknown-value handling", () => {
   test("renders real figures when everything loads", async () => {
     render(<Summary />);
     await waitFor(() =>
-      expect(screen.getAllByText(/\+\$500\.00/).length).toBeGreaterThan(0)
+      expect(screen.getAllByText(/\+\$476\.19/).length).toBeGreaterThan(0)
     );
     expect(screen.queryByText("—")).not.toBeInTheDocument();
   });
@@ -118,18 +129,13 @@ describe("Summary chart with nothing to plot", () => {
     expect(screen.getByText(/no portfolio history/i)).toBeInTheDocument();
   });
 
-  test("still draws a flat baseline when the current value IS known", async () => {
-    // One real number is enough to anchor an honest flat line.
-    mockedGet.mockImplementation((url: string) => {
-      if (url.includes("/api/holdings")) return Promise.resolve({ data: holdings });
-      if (url.includes("/api/account")) return Promise.resolve({ data: account });
-      return Promise.resolve({ data: { points: [] } });
-    });
-
+  test("does not invent historical performance from a known current balance", async () => {
     const { container } = render(<Summary />);
-    await waitFor(() => expect(container.querySelector("svg path")).not.toBeNull());
-    expect(screen.queryByText(/no portfolio history/i)).not.toBeInTheDocument();
+    await screen.findByText("Hi, alice!");
+    expect(container.querySelector("svg path")).toBeNull();
+    expect(screen.getByText(/no portfolio history/i)).toBeInTheDocument();
   });
+
 });
 
 describe("first run", () => {

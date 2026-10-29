@@ -4,6 +4,7 @@ import axios from "axios";
 import { toast } from "react-toastify";
 
 import Orders from "./Orders";
+import GeneralContext from "./GeneralContext";
 import { Order } from "../types";
 import type { Mock } from "vitest";
 
@@ -11,6 +12,7 @@ import type { Mock } from "vitest";
 // Orders only needs useNavigate (for the empty-state action).
 vi.mock("react-router-dom", () => ({
   useNavigate: () => vi.fn(),
+  Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => <a href={to} {...props}>{children}</a>,
 }));
 
 vi.mock("axios", () => ({
@@ -47,6 +49,21 @@ beforeEach(() => {
 });
 
 describe("Orders partial-fill reporting", () => {
+  test("keeps a fractional limit price visible rather than rounding it to cents", async () => {
+    renderOrders([order({ symbol: "DOGEUSD", limitPrice: 0.08991 })]);
+    expect(await screen.findByText("0.08991 (limit)")).toBeInTheDocument();
+  });
+
+  test("a quiet refresh superseding initial loading clears the loading state", async () => {
+    mockedGet.mockReturnValueOnce(new Promise(() => {}));
+    const value = (version: number) => ({ orderVersion: version, notifyOrderPlaced: vi.fn(), openTradeWindow: vi.fn(),
+      closeTradeWindow: vi.fn(), openBuyWindow: vi.fn(), closeBuyWindow: vi.fn() });
+    const { rerender } = render(<GeneralContext.Provider value={value(0)}><Orders /></GeneralContext.Provider>);
+    mockedGet.mockResolvedValue({ data: [order({})] });
+    rerender(<GeneralContext.Provider value={value(1)}><Orders /></GeneralContext.Provider>);
+    expect(await screen.findByText("BTCUSD")).toBeInTheDocument();
+    expect(screen.queryByText("Loading orders…")).not.toBeInTheDocument();
+  });
   test("shows the executed amount on a PARTIALLY_FILLED order", async () => {
     renderOrders([
       order({ status: "PARTIALLY_FILLED", qty: 1, filledQty: 0.4, fillPrice: 50000 }),

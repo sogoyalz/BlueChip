@@ -19,6 +19,7 @@ import { trusted } from "mongoose";
 import { OrdersModel } from "../model/OrdersModel";
 import { IOrder, OrderStatus } from "../schemas/OrdersSchema";
 import { HydratedDocument, Types } from "mongoose";
+import { appendOrderEvent } from "../schemas/OrderEvent";
 
 /** Statuses orderSync stops reconciling — nothing revisits an order once here. */
 export const TERMINAL_STATUSES = new Set<OrderStatus>([
@@ -44,6 +45,7 @@ export interface Observation {
   filledQty: number; // executed_amount — monotonically non-decreasing
   fillPrice?: number;
   reason?: string;
+  actorId?: Types.ObjectId | string;
 }
 
 interface StoredState {
@@ -114,7 +116,9 @@ export async function applyObservation(
     // resting status, so the reconciler refetches and fails on it every five
     // seconds forever while the user sees a filled order still listed as open.
     // The status is knowable even when the price is not; record what we know.
-    if (Number.isFinite(observed.fillPrice)) set.fillPrice = observed.fillPrice;
+    if (typeof observed.fillPrice === "number" && Number.isFinite(observed.fillPrice) && observed.fillPrice > 0) {
+      set.fillPrice = observed.fillPrice;
+    }
   }
   if (observed.reason !== undefined) set.reason = observed.reason;
 
@@ -124,7 +128,9 @@ export async function applyObservation(
   // any test that mocks the model).
   return OrdersModel.findOneAndUpdate(
     { _id: orderId, $or: [...newerKnowledge, ...qtyTie] },
-    { $set: set },
+    { $set: set, $push: { recentEvents: appendOrderEvent("EXCHANGE_OBSERVED", {
+      status: observed.status, filledQty: observed.filledQty, actorId: observed.actorId,
+    }) } },
     { returnDocument: "after" }
   );
 }

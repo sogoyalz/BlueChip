@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
@@ -17,6 +21,13 @@ function Navbar() {
   return (
     <nav
       className={`navbar navbar-expand-lg border-bottom site-navbar${scrolled ? " scrolled" : ""}`}
+      aria-label="Main navigation"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && menuOpen) {
+          setMenuOpen(false);
+          document.getElementById("navigation-toggle")?.focus();
+        }
+      }}
     >
       <div className="container p-2">
         <Link className="navbar-brand" to="/">
@@ -27,16 +38,24 @@ function Navbar() {
         </Link>
         <button
           className="navbar-toggler"
+          id="navigation-toggle"
           type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#navbarSupportedContent"
+          onClick={() => setMenuOpen((open) => !open)}
           aria-controls="navbarSupportedContent"
-          aria-expanded="false"
+          aria-expanded={menuOpen}
           aria-label="Toggle navigation"
         >
           <span className="navbar-toggler-icon"></span>
         </button>
-        <div className="collapse navbar-collapse" id="navbarSupportedContent">
+        <div
+          className={`collapse navbar-collapse${menuOpen ? " show" : ""}`}
+          id="navbarSupportedContent"
+          onClick={(event) => {
+            if (event.target instanceof Element && event.target.closest("a")) {
+              setMenuOpen(false);
+            }
+          }}
+        >
           <ul className="navbar-nav ms-auto mb-2 mb-lg-0">
             <li className="nav-item">
               <NavLink className="nav-link" to="/" end>

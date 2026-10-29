@@ -97,3 +97,11 @@ describe("the account dropdown", () => {
     expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 });
+
+
+test("operator navigation requires the session flag and uses no account request", async () => {
+  mockedGet.mockResolvedValue({ data: { username: "operator", isOperator: true } });
+  render(<MemoryRouter><Menu /></MemoryRouter>);
+  expect(await screen.findByRole("link", { name: "Operations" })).toHaveAttribute("href", "/operations");
+  expect(mockedGet).toHaveBeenCalledWith(expect.stringContaining("/api/session"), { withCredentials: true });
+});

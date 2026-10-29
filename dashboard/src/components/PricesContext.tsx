@@ -40,10 +40,10 @@ export function isPayloadFresh(
 ): boolean {
   const entries = Object.values(payload.prices ?? {});
   if (entries.length === 0) return false;
-  const newest = Math.max(...entries.map((e) => e.updatedAt ?? 0));
-  if (!newest) return false;
-  const sentAt = payload.updatedAt ?? newest;
-  return sentAt - newest <= maxAgeMs;
+  const oldest = Math.min(...entries.map((e) => e.updatedAt ?? 0));
+  if (!oldest) return false;
+  const sentAt = payload.updatedAt ?? Math.max(...entries.map(e => e.updatedAt));
+  return sentAt - oldest <= maxAgeMs;
 }
 
 interface PricesContextValue {

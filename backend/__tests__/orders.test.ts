@@ -1,3 +1,4 @@
+jest.mock("../services/tradingRules", () => ({ getTradingRules: jest.fn(async () => ({ tickSize: "0.00000001", quoteIncrement: "0.01", minOrderSize: 0.00001 })) }));
 /**
  * Order engine + /api/orders route tests. Models, the price feed, and the
  * Gemini sandbox client are mocked; JWT is real.
@@ -25,11 +26,13 @@ jest.mock("../model/OrdersModel", () => ({
     findOne: jest.fn(),
     findById: jest.fn(),
     findOneAndUpdate: jest.fn(),
+    updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
     countDocuments: jest.fn().mockResolvedValue(0),
     updateMany: jest.fn().mockResolvedValue({ modifiedCount: 0 }),
   },
 }));
 jest.mock("../services/priceFeed", () => ({
+  DEFAULT_MAX_AGE_MS: 30_000,
   getPrice: jest.fn(),
   isFresh: jest.fn(),
   getAllPrices: jest.fn(() => ({})),
@@ -122,6 +125,7 @@ beforeEach(() => {
   mockedIsFresh.mockReturnValue(true);
   mockedGetPrice.mockReturnValue({ price: 50000, changePct24h: 1, updatedAt: Date.now(), source: "rest" });
   mockedOrders.create.mockImplementation(async (doc: object) => fakeOrderDoc(doc));
+  mockedOrders.findOneAndUpdate.mockImplementation(async (_filter: unknown, update: { $set: object }) => fakeOrderDoc({ ...mockedOrders.create.mock.calls.at(-1)?.[0], ...update.$set }));
   mockedPlaceGeminiOrder.mockResolvedValue(geminiFill());
   // "No order recorded for this key yet" is the right baseline: jest.clearAllMocks
   // clears call history but NOT implementations, so a mockResolvedValue set by one
@@ -133,6 +137,18 @@ beforeEach(() => {
 });
 
 describe("POST /api/orders — validation", () => {
+  test("does not submit when prices expire while the intent is being persisted", async () => {
+    mockedOrders.create.mockImplementationOnce(async (doc: object) => {
+      mockedIsFresh.mockReturnValue(false);
+      return fakeOrderDoc(doc);
+    });
+    const res = await authedPost().send({ symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 0.1 });
+    expect(res.status).toBe(503);
+    expect(mockedPlaceGeminiOrder).not.toHaveBeenCalled();
+    expect(mockedOrders.updateOne).toHaveBeenCalledWith(expect.objectContaining({ status: "PENDING" }),
+      expect.objectContaining({ $set: expect.objectContaining({ status: "REJECTED" }),
+        $push: { recentEvents: expect.objectContaining({ $slice: -50 }) } }));
+  });
   test("rejects unauthenticated requests with 401", async () => {
     const res = await request(app)
       .post("/api/orders")
@@ -249,7 +265,7 @@ describe("POST /api/orders — market fills", () => {
     expect(res.body.order.status).toBe("PARTIALLY_FILLED");
   });
 
-  test("a Gemini placement failure surfaces as a 502", async () => {
+  test("an exchange 5xx keeps a durable unknown outcome", async () => {
     mockedPlaceGeminiOrder.mockRejectedValue(new Error("Gemini /v1/order/new responded 500"));
     const res = await authedPost().send({
       symbol: "BTCUSD",
@@ -257,8 +273,9 @@ describe("POST /api/orders — market fills", () => {
       type: "MARKET",
       qty: 0.1,
     });
-    expect(res.status).toBe(502);
-    expect(mockedOrders.create).not.toHaveBeenCalled();
+    expect(res.status).toBe(202);
+    expect(res.body.order.status).toBe("UNKNOWN");
+    expect(mockedOrders.create).toHaveBeenCalledTimes(1);
   });
 
   test("coerces numeric strings (regression from the old /neworder)", async () => {
@@ -315,14 +332,14 @@ describe("POST /api/orders — idempotency (clientOrderId)", () => {
       clientOrderId: "key-abc",
     });
     expect(res.status).toBe(201);
-    expect(mockedPlaceGeminiOrder.mock.calls[0][0].clientOrderId).toBe("key-abc");
+    expect(mockedPlaceGeminiOrder.mock.calls[0][0].clientOrderId).toMatch(/^[a-f0-9-]{36}$/);
     expect(mockedOrders.create.mock.calls[0][0].clientOrderId).toBe("key-abc");
   });
 
   test("a retry with the same clientOrderId returns the existing order without re-placing", async () => {
     // Simulate the first attempt already recorded: findOne finds it.
     mockedOrders.findOne.mockResolvedValue(
-      fakeOrderDoc({ symbol: "BTCUSD", side: "BUY", clientOrderId: "key-dup", status: "FILLED" })
+      fakeOrderDoc({ symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 0.1, clientOrderId: "key-dup", status: "FILLED" })
     );
     const res = await authedPost().send({
       symbol: "BTCUSD",
@@ -350,15 +367,13 @@ describe("POST /api/orders — idempotency (clientOrderId)", () => {
     expect(mockedPlaceGeminiOrder).not.toHaveBeenCalled();
   });
 
-  test("a true race (both requests pass findOne, insert loses to the unique index) still returns the winner's order, not a 500", async () => {
-    // Neither request sees the other's row yet — findOne returns nothing for
-    // both, so both go on to place on Gemini (which dedupes on client_order_id)
-    // and both call create(). The unique (userId, clientOrderId) index lets
-    // only the first insert through; this request's create() is the loser.
+  test("a lost reservation race returns the winner before contacting the exchange", async () => {
+    // Both requests initially see no row, but the unique reservation elects
+    // one submitter. This request loses before any external side effect.
     mockedOrders.findOne
       .mockResolvedValueOnce(null) // pre-insert idempotency check: not seen yet
       .mockResolvedValueOnce(
-        fakeOrderDoc({ symbol: "BTCUSD", side: "BUY", clientOrderId: "key-race", status: "FILLED" })
+        fakeOrderDoc({ symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 0.1, clientOrderId: "key-race", status: "FILLED" })
       ); // post-11000 lookup: the winner's row
     mockedOrders.create.mockRejectedValueOnce({ code: 11000 });
 
@@ -372,9 +387,8 @@ describe("POST /api/orders — idempotency (clientOrderId)", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.order.status).toBe("FILLED");
-    // Gemini was still hit once (dedup happens there); no balance-cache churn
-    // from this losing branch since it returns the existing doc, not a fresh fill.
-    expect(mockedPlaceGeminiOrder).toHaveBeenCalledTimes(1);
+    // Returning the winner never contacts the exchange a second time.
+    expect(mockedPlaceGeminiOrder).not.toHaveBeenCalled();
   });
 
   test("a create() failure unrelated to the unique index (no clientOrderId) still surfaces as a 500", async () => {
@@ -401,11 +415,11 @@ describe("POST /api/orders — idempotency (clientOrderId)", () => {
       symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 0.1, clientOrderId: "k-timeout",
     });
 
-    expect(res.status).toBe(504); // gateway timeout, not 502
-    expect(res.body.message).toMatch(/may still have been placed/i);
-    // With an idempotency key a retry is safe, and the copy says so.
-    expect(res.body.message).toMatch(/retrying with the same request is safe/i);
-    expect(mockedOrders.create).not.toHaveBeenCalled();
+    expect(res.status).toBe(202);
+    expect(res.body.order.status).toBe("UNKNOWN");
+    // The existing intent remains visible and will be looked up, not replayed.
+    expect(res.body.order.reason).toMatch(/confirmation pending/i);
+    expect(mockedOrders.create).toHaveBeenCalledTimes(1);
   });
 
   test("a timeout WITHOUT an idempotency key warns instead of inviting a retry", async () => {
@@ -416,27 +430,27 @@ describe("POST /api/orders — idempotency (clientOrderId)", () => {
       symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 0.1,
     });
 
-    expect(res.status).toBe(504);
-    expect(res.body.message).toMatch(/check your orders before trying again/i);
-    expect(res.body.message).not.toMatch(/safe/i);
+    expect(res.status).toBe(202);
+    expect(res.body.order.reason).toMatch(/do not place a replacement/i);
+    expect(res.body.order.status).toBe("UNKNOWN");
   });
 
-  test("a genuine rejection still reports a plain failure", async () => {
+  test("an unclassified exchange failure remains uncertain", async () => {
     mockedPlaceGeminiOrder.mockRejectedValueOnce(new Error("400 InvalidPrice"));
     const res = await authedPost().send({
       symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 0.1,
     });
-    expect(res.status).toBe(502);
-    expect(res.body.message).toMatch(/could not be placed/i);
+    expect(res.status).toBe(202);
+    expect(res.body.order.status).toBe("UNKNOWN");
   });
 
-  test("a persist failure AFTER the order executed still invalidates balances", async () => {
+  test("an acknowledgement failure leaves a durable recovery record and invalidates balances", async () => {
     // The order is live on Gemini and 0.1 BTC has already changed hands; only
     // the local write failed. Logging the orphan is not enough — the cached
     // balance is now provably wrong, and every /api/account and /api/holdings
     // read serves that wrong figure until the TTL expires. The snapshot series
     // would also silently skip the trade.
-    mockedOrders.create.mockRejectedValueOnce(new Error("Mongo connection lost"));
+    mockedOrders.findOneAndUpdate.mockRejectedValueOnce(new Error("Mongo connection lost"));
 
     const res = await authedPost().send({
       symbol: "BTCUSD",
@@ -476,7 +490,7 @@ describe("GET /api/orders", () => {
       .set("Authorization", `Bearer ${token()}`);
     expect(res.status).toBe(200);
     expect(mockedOrders.find).toHaveBeenCalledWith({ userId: "user-1" });
-    expect(chain.sort).toHaveBeenCalledWith({ createdAt: -1 });
+    expect(chain.sort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
   });
 
   test("reports the TRUE total, not the size of the page it returned", async () => {
@@ -568,7 +582,7 @@ describe("POST /api/orders/:id/cancel", () => {
       .send({ symbol: "BTCUSD", side: "BUY", type: "MARKET", qty: 1 });
 
     expect(res.status).toBe(201);
-    const created = mockedOrders.create.mock.calls.at(-1)![0];
+    const created = res.body.order;
     expect(created.status).toBe("FILLED");
     expect(created.filledQty).toBe(1);
     // Absent, not NaN and not a fabricated zero.

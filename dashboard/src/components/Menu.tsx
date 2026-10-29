@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import axios from "axios";
 
 import { API_URL, LOGIN_URL } from "../config";
-import { Account } from "../types";
+
 
 const menuItems = [
   { to: "/", label: "Dashboard" },
@@ -17,16 +17,15 @@ const Menu = () => {
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const location = useLocation();
+  const [isOperator, setIsOperator] = useState(false);
 
-  // Show the logged-in user's name (and derive avatar initials from it). The
-  // account endpoint is authenticated; Menu only renders inside the verified
-  // dashboard, so the cookie is always present here.
+  // Session identity is independent of the exchange account connection.
   useEffect(() => {
     let cancelled = false;
     axios
-      .get<Account>(`${API_URL}/api/account`, { withCredentials: true })
+      .get<{ username: string; isOperator: boolean }>(`${API_URL}/api/session`, { withCredentials: true })
       .then((res) => {
-        if (!cancelled) setUsername(res.data.username);
+        if (!cancelled) { setUsername(res.data.username); setIsOperator(res.data.isOperator === true); }
       })
       .catch(() => {
         /* non-fatal: fall back to the placeholder label */
@@ -86,11 +85,11 @@ const Menu = () => {
 
   return (
     <div className="menu-container">
-      <img src="/logo.svg" style={{ width: "50px" }} alt="BlueChip" />
+      <img src={`${import.meta.env.BASE_URL}logo.svg`} style={{ width: "50px" }} alt="BlueChip" />
       <div className="menus">
         <nav aria-label="Main">
         <ul>
-          {menuItems.map((item) => (
+          {[...menuItems, ...(isOperator ? [{ to: "/operations", label: "Operations" }] : [])].map((item) => (
             <li key={item.to}>
               <Link
                 style={{ textDecoration: "none" }}

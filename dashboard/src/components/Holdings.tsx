@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 import { VerticalGraph } from "./VerticalGraph";
@@ -11,6 +11,7 @@ import { Holding } from "../types";
 import { API_URL } from "../config";
 import { num, price as fmtPrice, usd } from "./shared/format";
 import { accountErrorMessage, accountErrorToast } from "./shared/apiError";
+import GeneralContext from "./GeneralContext";
 
 
 const columns: Column<Holding>[] = [
@@ -56,6 +57,7 @@ const Holdings = () => {
   // background refresh doesn't blank a page that already has good data.
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
+  const { orderVersion } = useContext(GeneralContext);
 
   useEffect(() => {
     // Auth rides the httpOnly cookie (withCredentials); this component only
@@ -93,7 +95,7 @@ const Holdings = () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [orderVersion]);
 
   // Only holdings we can actually value belong on a chart of values. Plotting
   // an unpriced one as a zero-height bar says it is worth nothing, which is

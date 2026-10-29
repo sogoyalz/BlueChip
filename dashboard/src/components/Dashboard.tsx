@@ -13,6 +13,8 @@ import { GeneralContextProvider } from "./GeneralContext";
 // brings chartjs-chart-financial and the date-fns time adapter with it. Loading
 // that on first paint costs every visitor for a route most never open, so it is
 // split into its own chunk and fetched when the route is actually visited.
+const Operations = lazy(() => import("./Operations"));
+const OrderDiagnostics = lazy(() => import("./OrderDiagnostics"));
 const MarketDetail = lazy(() => import("./MarketDetail"));
 
 const Dashboard = () => {
@@ -30,10 +32,13 @@ const Dashboard = () => {
             scrollable region that nothing can focus cannot be scrolled by
             keyboard alone. */}
         <main className="content" tabIndex={0}>
+          <a className="mobile-market-shortcut" href="#markets">Trade: browse markets ↓</a>
           <Suspense fallback={<Skeleton label="Loading…" />}>
             <Routes>
               <Route path="/" element={<Summary />} />
               <Route path="/orders" element={<Orders />} />
+              <Route path="/orders/:id" element={<OrderDiagnostics />} />
+              <Route path="/operations" element={<Operations />} />
               <Route path="/holdings" element={<Holdings />} />
               <Route path="/funds" element={<Funds />} />
               <Route path="/market/:symbol" element={<MarketDetail />} />

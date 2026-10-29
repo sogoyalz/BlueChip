@@ -6,23 +6,14 @@
 // really fill against a real matching engine, just not with real money.
 
 import { createHmac } from "crypto";
+import { envInteger, sandboxBase } from "../config/runtime";
 
-const PRIVATE_BASE =
-  process.env.GEMINI_PRIVATE_API_URL || "https://api.sandbox.gemini.com";
-
-// Refuse to boot if this ever points anywhere but the sandbox — a shared
-// API key that started placing real orders on production would be a
-// real-money incident, not a bug.
-if (!PRIVATE_BASE.includes("sandbox")) {
-  throw new Error(
-    `GEMINI_PRIVATE_API_URL must point at the Gemini sandbox, got: ${PRIVATE_BASE}`
-  );
-}
+const PRIVATE_BASE = sandboxBase(process.env.GEMINI_PRIVATE_API_URL);
 
 // Same bound as the public client. An order placement that never returns is
 // worse than one that fails: the caller cannot tell whether it reached the
 // exchange, and nothing else will reconcile it.
-const REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 8_000;
+const REQUEST_TIMEOUT_MS = envInteger("GEMINI_TIMEOUT_MS", 8_000, 1, 60_000);
 
 const API_KEY = process.env.GEMINI_API_KEY;
 const API_SECRET = process.env.GEMINI_API_SECRET;
@@ -35,6 +26,7 @@ export type GeminiOrderOption =
 
 export interface GeminiOrderResponse {
   order_id: string;
+  client_order_id?: string;
   symbol: string;
   side: GeminiOrderSide;
   type: string;
@@ -54,8 +46,8 @@ export interface GeminiBalance {
   availableForWithdrawal: string;
 }
 
-// Nonce must strictly increase per API key. Date.now() is monotonic within
-// this process; this assumes a single backend instance holds the key.
+// Nonce must strictly increase per API key. The local counter also guards
+// clock rollback; this assumes a single backend instance holds the key.
 let lastNonce = 0;
 function nextNonce(): number {
   const nonce = Math.max(Date.now(), lastNonce + 1);
@@ -84,8 +76,8 @@ export class GeminiUnavailableError extends Error {
   }
 }
 
-class GeminiHttpError extends Error {
-  constructor(readonly status: number, path: string) {
+export class GeminiHttpError extends Error {
+  constructor(readonly status: number, path: string, readonly reason?: string) {
     super(`Gemini ${path} responded ${status}`);
     this.name = "GeminiHttpError";
   }
@@ -140,7 +132,7 @@ async function signedPost<T>(
         `Gemini rejected our credentials on ${path} (${res.status}${reason ? ` ${reason}` : ""})`
       );
     }
-    throw new GeminiHttpError(res.status, path);
+    throw new GeminiHttpError(res.status, path, /^[A-Za-z0-9_]{1,64}$/.test(reason) ? reason : undefined);
   }
   return (await res.json()) as T;
 }
@@ -153,7 +145,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  *
  * `retries` is opt-in and deliberately stays at 0 for /v1/order/new and
  * /v1/order/cancel: repeating a write risks a second fill, and the idempotency
- * key plus a clear 504 is the right answer there instead. The read paths carry
+ * durable intent plus an UNKNOWN outcome is the recovery path instead. Reads carry
  * no such risk — a balance or order-status fetch that fails on a transient
  * blip currently surfaces to the user as a 500 for no good reason.
  *
@@ -242,11 +234,22 @@ export async function getGeminiOrderStatus(
   );
 }
 
+export async function getGeminiOrderByClientId(clientOrderId: string): Promise<GeminiOrderResponse> {
+  // The live sandbox returns an ARRAY for client-ID lookup, even though the
+  // order-ID lookup returns one object. Never guess when there is no unique match.
+  const response = await geminiPrivatePost<GeminiOrderResponse | GeminiOrderResponse[]>(
+    "/v1/order/status", { client_order_id: clientOrderId }, { retries: 1 });
+  if (!Array.isArray(response)) return response;
+  const matches = response.filter(order => order && order.client_order_id === clientOrderId);
+  if (matches.length !== 1) throw new Error("Client-ID lookup did not identify a unique order");
+  return matches[0];
+}
+
 // Balances change only when an order fills, but /api/account and /api/holdings
 // read them on every request. Cache for a few seconds and coalesce concurrent
 // callers onto one in-flight request, so a burst of dashboard loads can't blow
 // through Gemini's private-API rate budget. Env-overridable; 0 disables.
-const BALANCES_TTL_MS = Number(process.env.GEMINI_BALANCES_TTL_MS) || 3_000;
+const BALANCES_TTL_MS = envInteger("GEMINI_BALANCES_TTL_MS", 3_000, 0, 60_000);
 let balancesCache: { data: GeminiBalance[]; fetchedAt: number } | null = null;
 let balancesInFlight: Promise<GeminiBalance[]> | null = null;
 // Bumped by every invalidation. A fetch that was already in flight when the

@@ -81,7 +81,7 @@ const WatchList = () => {
   );
 
   return (
-    <div className="watchlist-container">
+    <div className="watchlist-container" id="markets" tabIndex={-1}>
       <div className="search-container">
         <input
           type="text"

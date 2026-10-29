@@ -8,6 +8,7 @@ import { clearBalancesCache, GeminiUnavailableError } from "../services/geminiPr
 import { snapshotNow } from "../services/snapshots";
 import { applyObservation, RESTING_STATUSES } from "../services/orderState";
 import { log } from "../util/logger";
+import { IOrder } from "../schemas/OrdersSchema";
 
 const router = Router();
 
@@ -15,13 +16,23 @@ const router = Router();
 // unbounded; the true total travels in X-Total-Count.
 const ORDER_PAGE_SIZE = 100;
 
+function orderSummary(order: IOrder & { _id?: unknown }) {
+  return {
+      _id: order._id, symbol: order.symbol, side: order.side, type: order.type, status: order.status,
+      qty: order.qty, filledQty: order.filledQty, limitPrice: order.limitPrice, fillPrice: order.fillPrice,
+      geminiOrderId: order.geminiOrderId, clientOrderId: order.clientOrderId,
+      reason: order.reason, createdAt: order.createdAt, filledAt: order.filledAt,
+  };
+}
+
+
 // Place an order. 201 = accepted (check order.status: a MARKET order can
 // still come back REJECTED, e.g. insufficient funds — that's an order
 // outcome, not a request error).
 router.post("/api/orders", verifyToken, orderLimiter, async (req, res) => {
   try {
     const order = await placeOrder(req.user!._id, req.body);
-    res.status(201).json({ order });
+    res.status(order.status === "PENDING" || order.status === "UNKNOWN" ? 202 : 201).json({ order: orderSummary(order) });
   } catch (err) {
     if (err instanceof OrderError) {
       res.status(err.status).json({ message: err.message });
@@ -55,17 +66,44 @@ router.get("/api/orders", verifyToken, async (req, res) => {
     const filter: Record<string, unknown> = { userId: req.user!._id };
     if (req.query.status === "open") {
       filter.status = trusted({ $in: RESTING_STATUSES });
+    } else if (req.query.status === "pending") {
+      filter.status = trusted({ $in: ["PENDING", "UNKNOWN"] });
+    } else if (req.query.status !== undefined && req.query.status !== "all") {
+      res.status(400).json({ message: "status must be all, open or pending" }); return;
     }
-    const orders = await OrdersModel.find(filter)
-      .sort({ createdAt: -1 })
-      .limit(ORDER_PAGE_SIZE);
+    if (req.query.symbol !== undefined) {
+      if (typeof req.query.symbol !== "string" || !/^[A-Za-z0-9]{3,20}$/.test(req.query.symbol)) {
+        res.status(400).json({ message: "Invalid symbol filter" }); return;
+      }
+      filter.symbol = req.query.symbol.toUpperCase();
+    }
+    const pageFilter = { ...filter };
+    if (req.query.cursor !== undefined) {
+      try {
+        if (typeof req.query.cursor !== "string" || req.query.cursor.length > 512) throw new Error();
+        const cursor = JSON.parse(Buffer.from(req.query.cursor, "base64url").toString()) as { ts: string; id: string };
+        const date = new Date(cursor.ts);
+        if (!Number.isFinite(date.getTime()) || !Types.ObjectId.isValid(cursor.id)) throw new Error();
+        pageFilter.$or = [
+          { createdAt: trusted({ $lt: date }) },
+          { createdAt: date, _id: trusted({ $lt: new Types.ObjectId(cursor.id) }) },
+        ];
+      } catch { res.status(400).json({ message: "Invalid order cursor" }); return; }
+    }
+    const found = await OrdersModel.find(pageFilter)
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(ORDER_PAGE_SIZE + 1);
+    const orders = found.slice(0, ORDER_PAGE_SIZE);
+    const last = orders[orders.length - 1];
+    res.set("X-Next-Cursor", found.length > ORDER_PAGE_SIZE && last
+      ? Buffer.from(JSON.stringify({ ts: last.createdAt.toISOString(), id: String(last._id) })).toString("base64url") : "");
 
     // The list is capped, so its length is not the user's order count. The
     // heading used to render that length as the total, telling someone with
     // 150 orders they had 100. Sent as a header so the response body stays the
     // plain array every caller already expects.
     res.set("X-Total-Count", String(await OrdersModel.countDocuments(filter)));
-    res.json(orders);
+    res.json(orders.map(orderSummary));
   } catch (err) {
     log.error("orders.list_failed", { userId: String(req.user?._id), err: err as Error });
     res.status(500).json({ message: "Failed to fetch orders" });
@@ -108,14 +146,16 @@ router.post("/api/orders/:id/cancel", verifyToken, orderLimiter, async (req, res
       status: result.status,
       filledQty: result.filledQty ?? 0,
       fillPrice: result.fillPrice,
+      actorId: req.user!._id,
     });
     // Part of it executed before the cancel landed — balances moved.
+    clearBalancesCache(); // cancellation releases holds even without a fill
     if (result.filledQty) {
-      clearBalancesCache();
       void snapshotNow();
     }
     // If a fresher observation won, report THAT state, not the one we lost with.
-    res.json({ order: updated ?? (await OrdersModel.findById(order._id)) });
+    const current = updated ?? (await OrdersModel.findById(order._id));
+    res.json({ order: current ? orderSummary(current) : null });
   } catch (err) {
     log.error("orders.cancel_failed", {
       userId: String(req.user?._id),

@@ -1,8 +1,7 @@
 # BlueChip — Project Guide
 
 What this system is, how it actually works, and what every file does. This
-document describes the code as it exists. Where something is a known gap it is
-labelled as one; nothing here is aspirational.
+guide includes historical implementation details. For the current submission protocol, root commands, and rollout requirements, use README.md and [OPERATIONS.md](OPERATIONS.md). The recovery update below supersedes older descriptions.
 
 ---
 
@@ -234,12 +233,12 @@ REST poller never stops, so prices survive a WebSocket outage.
 
 The shared account raises the stakes on concurrent writes.
 
-Handled: the `(userId, clientOrderId)` unique **partial** index makes duplicate
-submissions safe; if two requests race past the pre-insert check, the loser's
-`E11000` is turned into "return the order the winner persisted", and Gemini
-dedupes on the same key so the exchange cannot double-fill. The balances cache
-carries a generation counter so a fetch already in flight when a fill
-invalidates the cache cannot republish its pre-fill data.
+Handled: the `(userId, clientOrderId)` unique partial index reserves a durable
+PENDING record before contacting Gemini. Only the successful creator submits.
+A payload hash rejects reuse of a key with different instructions. Each record
+has a distinct exchange client ID. Ambiguous responses stay UNKNOWN and are
+looked up by that ID; the server never assumes Gemini will deduplicate a new
+submission. Balances are invalidated for both executions and order holds.
 
 The cancel route and `orderSync` both write order state, and they can run at
 the same instant. Neither takes a lock. Instead, both go through one
@@ -268,7 +267,7 @@ reconciler would never revisit the order, making the divergence permanent.
 | `index.ts` | Wiring and boot only (~170 lines). Builds the Express app: helmet, CORS (origins trimmed — a stray space would silently match nothing), 10kb JSON cap, cookies, rate limits, CSRF on unsafe methods. Mounts the routes, defines `GET /api/holdings`, `GET /api/account`, `GET /healthz`. On boot: validates symbols against Gemini, starts the WebSocket, REST poller, order reconciler, snapshot sweeper and SSE broadcaster. Exports `app` without listening when imported, which is how tests drive it. |
 | `migrations.ts` | The gated one-shot migration (§7), split out of index.ts. |
 | `lifecycle.ts` | SIGTERM/SIGINT draining, split out of index.ts. |
-| `config/symbols.ts` | The eight curated Gemini pairs and helpers. Cross-checked against Gemini's live symbol directory at boot so a delisted pair is dropped rather than polled forever; a network failure leaves the list untouched. |
+| `config/symbols.ts` | The ten curated Gemini pairs, including BCH/ZEC for default sandbox-funded holdings, and helpers. Cross-checked against Gemini's live symbol directory at boot so a delisted pair is dropped rather than polled forever; a network failure leaves the list untouched. |
 | `.env.example` | Every environment variable, documented. Mirrored in §8. |
 
 **Schemas and models**
@@ -312,7 +311,7 @@ reconciler would never revisit the order, making the divergence permanent.
 | `util/money.ts` | All money and quantity maths. |
 | `util/SecretToken.ts` | Signs the 12-hour JWT with the `tv` claim. |
 
-**Tests** — `__tests__/`, **216** tests. Most run with the models mocked, so
+**Tests** — `__tests__/`, a mix of unit and real-database integration tests. Most run with the models mocked, so
 they need no database and no network and finish in about three seconds.
 
 `persistence.integration.test.ts` and `orderJourney.integration.test.ts` are the
@@ -335,7 +334,7 @@ its race, cancel, persist-failure handling) · `orderSync.test.ts`
 `market.test.ts` · `sse.test.ts` · `snapshots.test.ts` · `money.test.ts` ·
 `userSchema.test.ts` · `hardening.test.ts`.
 
-### `dashboard/` — **43** tests
+### `dashboard/`
 
 | File | What it does |
 |---|---|
@@ -362,7 +361,7 @@ its race, cancel, persist-failure handling) · `orderSync.test.ts`
 | `components/shared/PnLValue.tsx`, `StatCard.tsx`, `EmptyState.tsx`, `Skeleton.tsx` | Signed coloured numbers, stat cards, empty and loading states. |
 | `components/DoughnoutChart.tsx`, `VerticalGraph.tsx` | Chart.js wrappers. |
 
-### `frontend/` — **16** tests
+### `frontend/`
 
 `src/landing_page/` holds the marketing pages (`home/`, `about/`, `products/`,
 `pricing/`, `support/`) plus `Navbar`, `Footer`, `NotFound`, `Reveal`
@@ -470,8 +469,9 @@ cannot re-run a destructive migration unattended.
 **Known window:** between the drop and the rebuild there is a sub-second gap
 with no uniqueness constraint. The migrating instance is not serving yet
 (`migrate()` runs before `app.listen`), so it only matters if another instance
-is live during a rolling deploy. Even then the exposure is a duplicate row,
-not a double trade — Gemini dedupes on `client_order_id` independently.
+is live during a rolling deploy. Traffic must be stopped on every instance during this legacy index replacement.
+The uniqueness constraint now protects the pre-submission reservation itself;
+there must not be an unprotected interval accepting new requests.
 
 ---
 
@@ -525,8 +525,8 @@ keeps working unchanged.
 - **Resting order** — an order live on the exchange's book, not yet filled.
 - **Top of book / depth** — the best bid and ask prices and the quantities
   available at each.
-- **Idempotency key** (`clientOrderId`) — a caller-supplied id that makes a
-  retry safe: the same key never places a second order.
+- **Idempotency key** (`clientOrderId`) — a caller-supplied id that retrieves the same durable
+  local intent. Unknown exchange outcomes are looked up, not resubmitted.
 - **Staleness guard** — orders are refused when the cached price is older than
   30s, so nobody trades on dead data.
 
@@ -537,6 +537,6 @@ keeps working unchanged.
 - **8** tradable pairs · **12h** JWT lifetime · **30s** staleness guard ·
   **30s** REST poll · **2s** SSE broadcast · **5s** order reconciliation ·
   **15min** snapshot sweep · **1%** market-order cross
-- **216** backend + **57** dashboard + **16** frontend tests
+- Test counts are recorded by the current verification run; use `npm run check`
 - **1** shared Gemini sandbox account · **1** market-data feed regardless of
   user count

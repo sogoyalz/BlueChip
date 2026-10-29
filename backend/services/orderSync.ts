@@ -9,12 +9,16 @@ import {
   GeminiOrderResponse,
   getGeminiActiveOrders,
   getGeminiOrderStatus,
+  getGeminiOrderByClientId,
   clearBalancesCache,
 } from "./geminiPrivate";
 import { snapshotNow } from "./snapshots";
 import { applyObservation, RESTING_STATUSES } from "./orderState";
-import { exchangeAmount } from "../util/money";
+import { exchangeAmount, exchangePrice } from "../util/money";
 import { log } from "../util/logger";
+import { appendOrderEvent } from "../schemas/OrderEvent";
+import { beginReconciliation, finishReconciliation, reconciliationCode } from "./reconciliationDiagnostics";
+import { usableExchangeObservation } from "./exchangeObservation";
 
 export const DEFAULT_SYNC_MS = 5_000;
 // Orders that have left Gemini's book need a status lookup of their own. Cap
@@ -30,13 +34,20 @@ let syncing = false;
 
 /** One sync pass over locally-resting orders. Exported for tests. */
 export async function tick(): Promise<void> {
+  const pass = beginReconciliation();
+  try { await runPass(pass); }
+  catch (error) { pass.failureCode = "database_error"; throw error; }
+  finally { finishReconciliation(pass); }
+}
+
+async function runPass(pass: ReturnType<typeof beginReconciliation>): Promise<void> {
   const resting = await OrdersModel.find({
     // trusted(): this $in is ours, not user input — sanitizeFilter is on globally.
-    status: trusted({ $in: RESTING_STATUSES }),
+    status: trusted({ $in: [...RESTING_STATUSES, "PENDING", "UNKNOWN"] }),
+    $or: [{ nextCheckAt: trusted({ $exists: false }) }, { nextCheckAt: trusted({ $lte: new Date() }) }],
   })
-    // Oldest first, so the cap below takes the orders most overdue for
-    // reconciliation rather than whatever natural order happens to return.
-    .sort({ createdAt: 1 })
+    // Least recently observed first; creation order must not starve later rows.
+    .sort({ lastCheckedAt: 1, _id: 1 })
     .limit(RESTING_SCAN_LIMIT);
   if (resting.length === 0) return;
 
@@ -67,20 +78,51 @@ export async function tick(): Promise<void> {
   } catch (err) {
     // Without the active list we can't tell "still resting" from "gone", and
     // guessing would mean N lookups again. Leave it for the next tick.
+    pass.failureCode = reconciliationCode(err);
     log.error("orderSync.active_list_failed", { err: err as Error });
     return;
   }
 
   let lookups = 0;
+  let unlinked = 0;
   for (const order of resting) {
-    if (!order.geminiOrderId) continue;
+    const uncertain = order.status === "PENDING" || order.status === "UNKNOWN";
+    // Give the original request its bounded response window. A restart can
+    // then recover the durable record without ever submitting it a second time.
+    if (order.status === "PENDING" && Date.now() - order.createdAt.getTime() < 30_000) continue;
+    if (!order.geminiOrderId && !order.exchangeClientOrderId) {
+      // Legacy records cannot be looked up automatically. Quarantine them
+      // for review so an entire capped page cannot block recoverable orders.
+      await OrdersModel.updateOne({
+        _id: order._id, status: order.status,
+        geminiOrderId: trusted({ $in: [null, ""] }),
+        exchangeClientOrderId: trusted({ $in: [null, ""] }),
+      }, { $set: {
+        status: "UNKNOWN", reason: "Exchange identifier missing. Manual review required.",
+        lastCheckedAt: new Date(), nextCheckAt: new Date(Date.now() + 24 * 60 * 60_000),
+        lastReconciliationCode: "missing_identifier", lastReconciliationErrorAt: new Date(),
+      }, ...(order.lastReconciliationCode !== "missing_identifier" ? { $push: { recentEvents: appendOrderEvent("MANUAL_REVIEW_REQUIRED", { status: "UNKNOWN", note: "missing_identifier" }) } } : {}) });
+      pass.manualReview += 1;
+      unlinked += 1;
+      continue;
+    }
+    if (lookups >= MAX_STATUS_LOOKUPS_PER_TICK && (uncertain || !active.has(order.geminiOrderId!))) continue;
+    let retryDelay = 0;
+    let failureCode: string | undefined;
+    pass.checked += 1;
     try {
-      let result = active.get(order.geminiOrderId);
+      let result = active.get(order.geminiOrderId!);
       if (!result) {
         // Off the book: filled or cancelled. Only these need resolving.
         if (lookups >= MAX_STATUS_LOOKUPS_PER_TICK) continue;
         lookups += 1;
-        result = await getGeminiOrderStatus(order.geminiOrderId);
+        result = order.geminiOrderId ? await getGeminiOrderStatus(order.geminiOrderId)
+          : await getGeminiOrderByClientId(order.exchangeClientOrderId!);
+      }
+      // Never turn an incomplete upstream payload into a terminal observation.
+      if (!usableExchangeObservation(result)) { retryDelay = 30_000; failureCode = "invalid_response"; continue; }
+      if (uncertain) {
+        await OrdersModel.updateOne({ _id: order._id }, { $set: { geminiOrderId: String(result.order_id) } });
       }
       const executed = exchangeAmount(result.executed_amount);
       // remaining stays a raw Number() on purpose: NaN === 0 is false, so an
@@ -88,7 +130,7 @@ export async function tick(): Promise<void> {
       // the safe direction, since FILLED is terminal and never re-reconciled.
       const remaining = Number(result.remaining_amount);
 
-      const status = result.is_cancelled
+      const status = order.type === "MARKET" && executed === 0 && !result.is_live ? "REJECTED" : result.is_cancelled
         ? "CANCELLED"
         : remaining === 0
         ? "FILLED"
@@ -100,7 +142,7 @@ export async function tick(): Promise<void> {
       // PARTIALLY_FILLED, just a larger executed amount). Sync when the status
       // changed OR more of it executed than we have recorded.
       const nextFillPrice =
-        executed > 0 ? Number(result.avg_execution_price) : order.fillPrice;
+        executed > 0 ? exchangePrice(result.avg_execution_price) : order.fillPrice;
       const statusChanged = status !== order.status;
       const fillAdvanced = executed > 0 && executed !== (order.filledQty ?? 0);
       if (!statusChanged && !fillAdvanced) continue; // nothing changed
@@ -111,8 +153,10 @@ export async function tick(): Promise<void> {
         status,
         filledQty: executed,
         fillPrice: executed > 0 ? nextFillPrice : undefined,
+        reason: uncertain ? "" : undefined,
       });
       if (!updated) continue; // a fresher observation won; nothing to do
+      pass.changed += 1;
       // Only a NEW execution moves the shared account's balances — including
       // one on a CANCELLED order that partially filled before the cancel
       // landed. A cancel that executed nothing new leaves balances alone.
@@ -121,9 +165,23 @@ export async function tick(): Promise<void> {
         void snapshotNow();
       }
     } catch (err) {
+      retryDelay = 30_000;
+      failureCode = reconciliationCode(err);
       log.error("orderSync.order_failed", { orderId: String(order._id), err: err as Error });
+    } finally {
+      // Fair scheduling: successful and failed observations both yield their
+      // turn. Orders skipped for the API budget keep their older position.
+      if (failureCode) { pass.failed += 1; pass.failureCode = failureCode; }
+      await OrdersModel.updateOne({ _id: order._id }, { $set: {
+        lastCheckedAt: new Date(), nextCheckAt: new Date(Date.now() + retryDelay),
+        ...(failureCode ? { lastReconciliationCode: failureCode, lastReconciliationErrorAt: new Date() } : {}),
+      }, $inc: { reconciliationAttempts: 1 },
+        ...(!failureCode ? { $unset: { lastReconciliationCode: "", lastReconciliationErrorAt: "" } } : {}),
+        ...(failureCode && failureCode !== order.lastReconciliationCode ? { $push: { recentEvents: appendOrderEvent("LOOKUP_FAILED", { note: failureCode }) } } : {}),
+      });
     }
   }
+  if (unlinked) log.warn("orderSync.unlinked_records", { count: unlinked });
 }
 
 export function startOrderSync(intervalMs: number = DEFAULT_SYNC_MS): void {

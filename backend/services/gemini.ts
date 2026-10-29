@@ -5,12 +5,13 @@
 // (services/priceFeed.ts) and the candle cache (routes/MarketRoute.ts) are
 // sized to stay well under that.
 
+import { envInteger } from "../config/runtime";
 const GEMINI_BASE = process.env.GEMINI_API_URL || "https://api.gemini.com";
 
 // fetch() has no default timeout: a hung upstream connection would hold a
 // request handler open indefinitely, and with enough of them the process stops
 // serving anything. Every call to Gemini is bounded.
-const REQUEST_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 8_000;
+const REQUEST_TIMEOUT_MS = envInteger("GEMINI_TIMEOUT_MS", 8_000, 1, 60_000);
 
 export const CANDLE_TIMEFRAMES = [
   "1m",

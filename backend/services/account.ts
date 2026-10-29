@@ -7,6 +7,13 @@
 import { getGeminiBalances, GeminiBalance } from "./geminiPrivate";
 import { getPrice } from "./priceFeed";
 import { toCents, fromCents } from "../util/money";
+import { DEFAULT_MAX_AGE_MS, PriceEntry } from "./priceFeed";
+
+function fresh(entry: PriceEntry | undefined): entry is PriceEntry {
+  return !!entry && Number.isFinite(entry.price) && entry.price > 0 &&
+    Number.isFinite(entry.updatedAt) && Date.now() - entry.updatedAt <= DEFAULT_MAX_AGE_MS &&
+    entry.updatedAt <= Date.now() + 5_000;
+}
 
 export interface HoldingView {
   symbol: string;
@@ -17,6 +24,7 @@ export interface HoldingView {
 
 export interface AccountTotals {
   balance: number;
+  availableBalance: number;
   portfolioValue: number;
   /**
    * False when at least one holding could not be priced, so portfolioValue
@@ -28,6 +36,7 @@ export interface AccountTotals {
 
 export interface PortfolioCents {
   cashCents: number;
+  availableCashCents: number;
   holdingsCents: number;
   valueCents: number;
   complete: boolean;
@@ -46,7 +55,8 @@ export async function getHoldings(): Promise<HoldingView[]> {
   const balances = await getGeminiBalances();
   return balances.filter(isTradableBalance).map((b) => {
     const symbol = `${b.currency}USD`;
-    const live = getPrice(symbol);
+    const cached = getPrice(symbol);
+    const live = fresh(cached) ? cached : undefined;
     return {
       symbol,
       qty: Number(b.amount),
@@ -77,31 +87,37 @@ export async function portfolioCents(): Promise<PortfolioCents> {
   const balances = await getGeminiBalances();
 
   let cashCents = 0;
+  let availableCashCents = 0;
   let holdingsCents = 0;
   let complete = true;
 
   for (const b of balances) {
     if (b.currency === "USD") {
       cashCents += toCents(Number(b.amount));
+      availableCashCents += toCents(Number(b.available));
       continue;
     }
+    const amount = Number(b.amount);
+    if (!Number.isFinite(amount) || amount < 0) throw new RangeError("Invalid exchange balance");
+    if (amount === 0) continue;
     const live = getPrice(`${b.currency}USD`);
-    if (live === undefined) {
+    if (!fresh(live)) {
       // Skip it AND say so, rather than counting it as zero.
       complete = false;
       continue;
     }
-    holdingsCents += toCents(Number(b.amount) * live.price);
+    holdingsCents += toCents(amount * live.price);
   }
 
-  return { cashCents, holdingsCents, valueCents: cashCents + holdingsCents, complete };
+  return { cashCents, availableCashCents, holdingsCents, valueCents: cashCents + holdingsCents, complete };
 }
 
 /** Cash and total portfolio value, in dollars at the edge. */
 export async function getAccountTotals(): Promise<AccountTotals> {
-  const { cashCents, valueCents, complete } = await portfolioCents();
+  const { cashCents, availableCashCents, valueCents, complete } = await portfolioCents();
   return {
     balance: fromCents(cashCents),
+    availableBalance: fromCents(availableCashCents),
     portfolioValue: fromCents(valueCents),
     complete,
   };

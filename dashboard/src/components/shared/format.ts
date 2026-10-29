@@ -37,10 +37,14 @@ export const pct = (n: number, dp = 2): string =>
  * Market prices carry more decimals as they get smaller — 80,412.55 needs two,
  * 0.0899 would round to nothing at two.
  */
-export const price = (n: number | null | undefined): string =>
+export const price = (n: number | null | undefined, decimals?: number): string =>
   typeof n === "number" && Number.isFinite(n)
     ? n.toLocaleString("en-US", {
         minimumFractionDigits: 2,
-        maximumFractionDigits: n >= 1000 ? 2 : 4,
+        maximumFractionDigits: decimals ?? (n >= 1000 ? 2 : 4),
       })
     : NON_FINITE;
+
+/** Per-unit execution quotes must not be rounded to aggregate USD cents. */
+export const quoteUsd = (n: number | null | undefined): string =>
+  typeof n === "number" && Number.isFinite(n) ? `$${price(n, 18)}` : NON_FINITE;

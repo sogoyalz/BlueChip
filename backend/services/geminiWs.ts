@@ -14,7 +14,7 @@
 import WebSocket from "ws";
 import { SYMBOLS } from "../config/symbols";
 import { setPrice } from "./priceFeed";
-import { applyChanges, resetBook } from "./orderBook";
+import { applyChanges, resetBook, clearBooks } from "./orderBook";
 
 const WS_URL = process.env.GEMINI_WS_URL || "wss://api.gemini.com/v2/marketdata";
 
@@ -130,6 +130,7 @@ function connect(): void {
   socket.on("close", () => {
     if (isStale()) return;
     connected = false;
+    clearBooks();
     scheduleReconnect();
   });
 }
@@ -163,6 +164,7 @@ export function startGeminiWs(): void {
 export function stopGeminiWs(): void {
   stopped = true;
   connected = false;
+  clearBooks();
   if (watchdogTimer) clearInterval(watchdogTimer);
   watchdogTimer = null;
   if (reconnectTimer) clearTimeout(reconnectTimer);

@@ -34,6 +34,7 @@ const MarketDetail = () => {
   const [timeframe, setTimeframe] = useState<CandleTimeframe>("1hr");
   const [candles, setCandles] = useState<Candle[]>([]);
   const [loading, setLoading] = useState(true);
+  const [chartError, setChartError] = useState(false);
 
   // Sliced once per candle change rather than on every render: a fresh array
   // here would defeat the memo on CandleChart, since the prop identity is what
@@ -49,23 +50,30 @@ const MarketDetail = () => {
 
   useEffect(() => {
     let cancelled = false;
+    setCandles([]);
+    setChartError(false);
     setLoading(true);
+    const load = () => {
     axios
       .get<{ candles: Candle[] }>(`${API_URL}/api/candles/${pair}`, {
         params: { timeframe },
       })
       .then((res) => {
-        if (!cancelled) setCandles(res.data.candles);
+        if (!cancelled) { setCandles(res.data.candles); setChartError(false); }
       })
       .catch((err) => {
         console.error("Failed to load candles:", err);
-        if (!cancelled) toast.error("Could not load chart data.");
+        if (!cancelled) { setChartError(true); toast.error("Could not load chart data."); }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    };
+    load();
+    const timer = setInterval(load, 60_000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
   }, [pair, timeframe]);
 
@@ -140,7 +148,7 @@ const MarketDetail = () => {
         <div className="chart-body candle-body">
           {loading ? (
             <Skeleton label="Loading chart…" />
-          ) : (
+          ) : chartError ? <p role="status">Chart data unavailable. Retrying automatically.</p> : (
             <CandleChart candles={visibleCandles} label={info?.base ?? pair} />
           )}
         </div>

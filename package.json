@@ -1,0 +1,19 @@
+{
+  "name": "bluechip",
+  "private": true,
+  "engines": {
+    "node": ">=22.22.2"
+  },
+  "scripts": {
+    "setup": "node scripts/project.mjs setup",
+    "setup:browsers": "node scripts/project.mjs browsers",
+    "dev": "node scripts/project.mjs dev",
+    "build": "node scripts/project.mjs build",
+    "test": "node scripts/project.mjs test",
+    "test:e2e": "node scripts/project.mjs e2e",
+    "check": "node scripts/project.mjs check",
+    "validate:live": "node scripts/validate-live.mjs",
+    "rehearse:restore": "node scripts/rehearse-restore.mjs",
+    "test:deployment": "node scripts/project.mjs deployment"
+  }
+}

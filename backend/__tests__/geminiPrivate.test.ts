@@ -15,6 +15,26 @@ afterEach(() => {
   global.fetch = originalFetch;
 });
 
+describe("client-ID status lookup", () => {
+  const order = { order_id: "73798699170496038", client_order_id: "original-client", executed_amount: "0",
+    remaining_amount: "0.00001", is_live: true, is_cancelled: false };
+  test("normalizes the array returned by the live sandbox", async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => [order] });
+    const { getGeminiOrderByClientId } = require("../services/geminiPrivate");
+    expect(await getGeminiOrderByClientId("original-client")).toEqual(order);
+  });
+  test("selects only the matching client ID from an array", async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => [{ ...order, client_order_id: "different" }, order] });
+    const { getGeminiOrderByClientId } = require("../services/geminiPrivate");
+    expect(await getGeminiOrderByClientId("original-client")).toEqual(order);
+  });
+  test.each([{ response: [] }, { response: [order, order] }, { response: [{ ...order, client_order_id: "different" }] }])("refuses missing or ambiguous matches %p", async ({ response }) => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, json: async () => response });
+    const { getGeminiOrderByClientId } = require("../services/geminiPrivate");
+    await expect(getGeminiOrderByClientId("original-client")).rejects.toThrow(/unique order/);
+  });
+});
+
 describe("boot-time sandbox guard", () => {
   test("refuses to load if GEMINI_PRIVATE_API_URL is not sandbox", () => {
     process.env.GEMINI_PRIVATE_API_URL = "https://api.gemini.com";
@@ -109,6 +129,21 @@ describe("signed requests", () => {
 describe("balances cache invalidation", () => {
   const okJson = (body: unknown) => ({ ok: true, json: async () => body });
   const balances = [{ currency: "USD", amount: "100", available: "100", availableForWithdrawal: "100" }];
+
+  test("zero TTL disables caching rather than falling back to the default", async () => {
+    const previous = process.env.GEMINI_BALANCES_TTL_MS;
+    process.env.GEMINI_BALANCES_TTL_MS = "0";
+    try {
+      const mockFetch = jest.fn().mockResolvedValue(okJson(balances));
+      global.fetch = mockFetch as unknown as typeof fetch;
+      const { getGeminiBalances } = require("../services/geminiPrivate");
+      await getGeminiBalances(); await getGeminiBalances();
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      if (previous === undefined) delete process.env.GEMINI_BALANCES_TTL_MS;
+      else process.env.GEMINI_BALANCES_TTL_MS = previous;
+    }
+  });
 
   test("serves a second read from cache when nothing invalidated it", async () => {
     const mockFetch = jest.fn().mockResolvedValue(okJson(balances));

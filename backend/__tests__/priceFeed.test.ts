@@ -1,6 +1,7 @@
 jest.mock("../services/gemini", () => ({
   fetchTickerV2: jest.fn(),
 }));
+jest.mock("../services/geminiPrivate", () => ({ getGeminiBalances: jest.fn() }));
 
 import {
   pollOnce,
@@ -12,12 +13,24 @@ import {
 } from "../services/priceFeed";
 import { fetchTickerV2 } from "../services/gemini";
 import { SYMBOLS } from "../config/symbols";
+import { getGeminiBalances } from "../services/geminiPrivate";
+import { getAccountTotals } from "../services/account";
 
 const mockedFetchTicker = fetchTickerV2 as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
   clearCache();
+});
+
+test("normal polling can value the assets funded in a new sandbox account", async () => {
+  (getGeminiBalances as jest.Mock).mockResolvedValue([
+    { currency: "USD", amount: "100000", available: "100000" },
+    ...["BTC", "ETH", "LTC", "BCH", "ZEC"].map(currency => ({ currency, amount: "1", available: "1" })),
+  ]);
+  mockedFetchTicker.mockImplementation(async (symbol: string) => ({ symbol, open: 100, close: 100, changePct24h: 0 }));
+  await pollOnce();
+  expect(await getAccountTotals()).toMatchObject({ complete: true, balance: 100000, portfolioValue: 100500 });
 });
 
 describe("pollOnce", () => {

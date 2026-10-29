@@ -47,7 +47,7 @@ const TopBar = () => {
           <TickerBlock symbol="ETHUSD" label="ETH / USD" />
           <div
             className="live-pill"
-            style={isStale ? { opacity: 0.45 } : undefined}
+            style={isStale ? { borderStyle: "dashed" } : undefined}
             title={
               isStale
                 ? "Market data delayed"

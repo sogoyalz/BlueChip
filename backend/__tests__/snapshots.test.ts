@@ -16,6 +16,7 @@ jest.mock("../model/SnapshotModel", () => ({
   SnapshotModel: { find: jest.fn(), create: jest.fn(), aggregate: jest.fn() },
 }));
 jest.mock("../services/priceFeed", () => ({
+  DEFAULT_MAX_AGE_MS: 30_000,
   getPrice: jest.fn(),
   getAllPrices: jest.fn(() => ({})),
 }));
@@ -47,7 +48,7 @@ const historyReturns = (buckets: object[]) =>
 
 beforeEach(() => {
   jest.clearAllMocks();
-  mockedGetPrice.mockReturnValue({ price: 50000 });
+  mockedGetPrice.mockReturnValue({ price: 50000, updatedAt: Date.now() });
 });
 
 describe("snapshotNow", () => {
@@ -100,7 +101,7 @@ describe("snapshotNow", () => {
       { currency: "XYZ", amount: "500", available: "500", availableForWithdrawal: "500" },
     ]);
     mockedGetPrice.mockImplementation((sym: string) =>
-      sym === "XYZUSD" ? undefined : { price: 50000 }
+      sym === "XYZUSD" ? undefined : { price: 50000, updatedAt: Date.now() }
     );
     await snapshotNow();
     expect(mockedSnapshots.create).not.toHaveBeenCalled();

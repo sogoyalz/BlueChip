@@ -28,6 +28,7 @@ describe("Funds", () => {
         username: "alice",
         email: "a@b.com",
         balance: 80000,
+        availableBalance: 60000,
         portfolioValue: 112500,
       },
     });

@@ -13,7 +13,7 @@ describe('Home Hero Component', () => {
                 <Hero />
             </MemoryRouter>,
         );
-        const heroImage = screen.getByAltText('BlueChip Terminal trading interface');
+        const heroImage = screen.getByRole('img', { name: /illustration of the bluechip trading terminal/i });
         expect(heroImage).toBeInTheDocument();
         expect(heroImage).toHaveAttribute('src', '/media/images/heroTerminal.svg');
     });
@@ -25,13 +25,14 @@ describe('Home Hero Component', () => {
             </MemoryRouter>,
         );
         expect(
-            screen.getByText('Trade crypto for real — with none of the risk.')
+            screen.getByRole('heading', { level: 1, name: /real trades.*room to learn/i })
         ).toBeInTheDocument();
         expect(
             screen.getByRole('link', { name: /start trading free/i })
         ).toBeInTheDocument();
         expect(
-            screen.getByRole('link', { name: /see how it works/i })
-        ).toBeInTheDocument();
+            screen.getByRole('link', { name: /explore the platform/i })
+        ).toHaveAttribute('href', '/product');
+        expect(screen.getByRole('link', { name: /start trading free/i })).toHaveAttribute('href', '/signup');
     });
 });

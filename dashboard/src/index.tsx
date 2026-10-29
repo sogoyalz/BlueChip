@@ -12,7 +12,7 @@ const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement)
 root.render(
   <React.StrictMode>
     <ThemeProvider theme={theme}>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "") || "/"}>
         <Home />
         {/* bottom-center on narrow screens: top-right spans the full width on a
           phone and covered the page heading and first stat card. */}

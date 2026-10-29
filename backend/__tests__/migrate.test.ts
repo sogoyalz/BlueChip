@@ -109,7 +109,7 @@ describe("idempotency index", () => {
   test("reports loudly when the partial index is not in place afterwards", async () => {
     const err = jest.spyOn(console, "error").mockImplementation(() => {});
     indexes.mockResolvedValueOnce([LEGACY_SPARSE]).mockResolvedValueOnce([]);
-    await migrate();
+    await expect(migrate()).rejects.toThrow(/index is missing/);
     expect(err).toHaveBeenCalledWith(
       expect.stringContaining("idempotency is NOT protected"),
       expect.anything()

@@ -34,6 +34,16 @@ describe("formatEvent", () => {
 });
 
 describe("client lifecycle", () => {
+  test("disconnects slow readers when write reports backpressure", () => {
+    const response = fakeRes();
+    addClient(response, "slow-reader");
+    (response.write as jest.Mock).mockReturnValue(false);
+    broadcastPrices();
+    expect(response.end).toHaveBeenCalled();
+    expect(clientCount()).toBe(0);
+    broadcastPrices();
+    expect(response.write).toHaveBeenCalledTimes(2);
+  });
   test("a new client immediately receives a snapshot frame", () => {
     setPrice("BTCUSD", { price: 64000, changePct24h: 1.2 });
     const res = fakeRes();

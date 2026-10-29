@@ -1,3 +1,4 @@
+jest.mock("../services/tradingRules", () => ({ getTradingRules: jest.fn(async () => ({ tickSize: "0.00000001", quoteIncrement: "0.01", minOrderSize: 0.00001 })) }));
 /**
  * The order journey, end to end, against a real database.
  *
@@ -31,6 +32,7 @@ jest.mock("../services/geminiPrivate", () => ({
   clearBalancesCache: jest.fn(),
 }));
 jest.mock("../services/priceFeed", () => ({
+  DEFAULT_MAX_AGE_MS: 30_000,
   getPrice: jest.fn(() => ({ price: 50000, changePct24h: 1, updatedAt: Date.now(), source: "rest" })),
   isFresh: jest.fn(() => true),
   getAllPrices: jest.fn(() => ({})),

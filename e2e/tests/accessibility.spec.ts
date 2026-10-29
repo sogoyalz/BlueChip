@@ -141,6 +141,12 @@ test.describe("accessibility", () => {
         viewport: window.innerWidth,
       }));
       expect(overflow.docWidth).toBeLessThanOrEqual(overflow.viewport + 1);
+      const header = await page.locator("header").boundingBox();
+      const trade = await page.getByRole("link", { name: /trade: browse markets/i }).boundingBox();
+      expect(trade!.y).toBeGreaterThanOrEqual(header!.y + header!.height);
+      for (const label of ["Dashboard", "Orders", "Holdings", "Funds"]) {
+        await expect(page.getByRole("link", { name: label, exact: true })).toBeInViewport();
+      }
     });
 
     test("the trade actions are reachable without hovering", async ({ page }) => {
@@ -163,6 +169,20 @@ test.describe("accessibility", () => {
     await buy.click();
 
     await expect(page.getByRole("dialog", { name: /buy btcusd/i })).toBeVisible();
+    const { violations } = await scan(page);
+    expect(describeViolations(violations)).toBe("");
+  });
+
+  test("delayed prices retain readable contrast", async ({ page }) => {
+    await page.route("**/api/stream", route => route.fulfill({
+      contentType: "text/event-stream",
+      body: `event: prices\ndata: ${JSON.stringify({
+        updatedAt: Date.now(),
+        prices: { BTCUSD: { price: 50000, changePct24h: 0, updatedAt: Date.now() - 60_000, source: "rest" } },
+      })}\n\n`,
+    }));
+    await signIn(page);
+    await expect(page.getByText("Delayed", { exact: true })).toBeVisible();
     const { violations } = await scan(page);
     expect(describeViolations(violations)).toBe("");
   });

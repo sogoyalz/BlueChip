@@ -74,6 +74,12 @@ beforeEach(() => {
 });
 
 describe("POST /signup", () => {
+  test.each(["a".repeat(73), "😀".repeat(19)])("rejects passwords beyond bcrypt's byte limit", async password => {
+    const res = await csrfPost("/signup").send({ email: "long@example.com", username: "trader", password });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/72 UTF-8 bytes/);
+    expect(mockedUserModel.create).not.toHaveBeenCalled();
+  });
   test("rejects missing fields with 400", async () => {
     const res = await csrfPost("/signup").send({ email: "a@b.com" });
     expect(res.status).toBe(400);
@@ -454,7 +460,7 @@ describe("POST /logout", () => {
       .send({});
     expect(res.status).toBe(200);
     expect(mockedUserModel.updateOne).toHaveBeenCalledWith(
-      { _id: "user-1" },
+      expect.objectContaining({ _id: "user-1" }),
       { $inc: { tokenVersion: 1 } }
     );
   });

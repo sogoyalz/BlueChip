@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useContext } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 
@@ -7,27 +7,30 @@ import { Account } from "../types";
 import { API_URL } from "../config";
 import { usd } from "./shared/format";
 import { accountErrorMessage, accountErrorToast } from "./shared/apiError";
+import GeneralContext from "./GeneralContext";
+import { useRefresh } from "./shared/useRefresh";
 
 
 const Funds = () => {
   const [account, setAccount] = useState<Account | null>(null);
 
-  const loadAccount = useCallback(() => {
-    axios
+  const { orderVersion } = useContext(GeneralContext);
+  useRefresh(async (signal) => {
+    await axios
       .get<Account>(`${API_URL}/api/account`, {
         withCredentials: true,
+        signal,
       })
-      .then((res) => setAccount(res.data))
+      .then((res) => { if (!signal.aborted) setAccount(res.data); })
       .catch((err) => {
+        if (signal.aborted) return;
         console.error("Failed to load account:", err);
         toast.error(
           accountErrorMessage(err, "Could not load account."),
           accountErrorToast(err, "funds-account-error"),
         );
       });
-  }, []);
-
-  useEffect(loadAccount, [loadAccount]);
+  }, orderVersion);
 
   const portfolioValue = account?.portfolioValue ?? account?.balance ?? 0;
   // The backend says so when it could not price every holding, in which case
@@ -40,8 +43,11 @@ const Funds = () => {
       <h1 className="title">Funds</h1>
 
       <div className="row cols-4">
-        <StatCard label="Cash balance" sub="available to trade">
+        <StatCard label="Cash balance" sub="total cash, including order holds">
           {account ? usd(account.balance) : "—"}
+        </StatCard>
+        <StatCard label="Buying power" sub="available to trade">
+          {account ? usd(account.availableBalance ?? account.balance) : "—"}
         </StatCard>
         <StatCard label="Portfolio value" sub="cash + holdings">
           {portfolioKnown ? usd(portfolioValue) : "—"}

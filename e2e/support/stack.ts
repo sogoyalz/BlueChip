@@ -189,6 +189,8 @@ export async function startStack(): Promise<Stack> {
       GEMINI_API_SECRET: "e2e-secret",
       GEMINI_API_URL: gemini.url,
       GEMINI_PRIVATE_API_URL: gemini.url,
+      GEMINI_ALLOW_TEST_URL: "true",
+      GEMINI_WS_URL: "ws://127.0.0.1:1",
       // The balance cache would otherwise hide the post-fill invalidation the
       // journey checks for.
       GEMINI_BALANCES_TTL_MS: "0",

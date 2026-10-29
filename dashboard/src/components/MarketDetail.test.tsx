@@ -62,6 +62,14 @@ beforeEach(() => {
 });
 
 describe("the market page", () => {
+  test("a failed timeframe change never relabels the previous candles", async () => {
+    renderPage();
+    await screen.findByTestId("candles");
+    mockedGet.mockRejectedValueOnce(new Error("unavailable"));
+    fireEvent.click(screen.getByRole("tab", { name: "1D" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/unavailable/i);
+    expect(screen.queryByTestId("candles")).not.toBeInTheDocument();
+  });
   test("names the pair in an h1, like every other route", async () => {
     renderPage();
     const h1 = await screen.findByRole("heading", { level: 1 });

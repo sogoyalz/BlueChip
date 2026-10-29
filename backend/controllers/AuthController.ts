@@ -6,6 +6,7 @@ import { BCRYPT_COST } from "../schemas/UserSchema";
 import { createSecretToken } from "../util/SecretToken";
 import { extractToken } from "../middlewares/AuthMiddleware";
 import { log } from "../util/logger";
+import { trusted } from "mongoose";
 
 // Shared cookie options for the auth token. httpOnly so an XSS can't read it,
 // secure in production (HTTPS only). Logout clears the cookie with the SAME
@@ -96,6 +97,12 @@ export const Signup = async (req: Request, res: Response): Promise<void> => {
         success: false,
         message: "Password must be at least 8 characters",
       });
+      return;
+    }
+    // bcrypt hashes bytes, not JS characters. Keep legacy login compatible,
+    // but never create another password with an unauthenticated suffix.
+    if (Buffer.byteLength(password, "utf8") > 72) {
+      res.status(400).json({ success: false, message: "Password must be at most 72 UTF-8 bytes" });
       return;
     }
 
@@ -211,7 +218,13 @@ export const Logout = async (req: Request, res: Response): Promise<void> => {
       const payload = jwt.verify(token, process.env.TOKEN_KEY as string, {
         algorithms: ["HS256"],
       }) as JwtPayload;
-      await UserModel.updateOne({ _id: payload.id }, { $inc: { tokenVersion: 1 } });
+      const version = payload.tv ?? 0;
+      await UserModel.updateOne(
+        { _id: payload.id, ...(version === 0
+          ? { $or: [{ tokenVersion: 0 }, { tokenVersion: trusted({ $exists: false }) }] }
+          : { tokenVersion: version }) },
+        { $inc: { tokenVersion: 1 } }
+      );
     } catch (err) {
       log.warn("auth.revoke_skipped", { reason: (err as Error).message });
     }

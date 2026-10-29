@@ -1,0 +1,25 @@
+{$SITE_ADDRESS} {
+    encode zstd gzip
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Frame-Options DENY
+    }
+    redir /app /app/ 308
+    redir /backend /backend/ 308
+    handle_path /backend/* {
+        reverse_proxy {$BACKEND_UPSTREAM:backend:3002} {
+            flush_interval -1
+        }
+    }
+    handle_path /app/* {
+        root * /srv/dashboard
+        try_files {path} /index.html
+        file_server
+    }
+    handle {
+        root * /srv/landing
+        try_files {path} /index.html
+        file_server
+    }
+}

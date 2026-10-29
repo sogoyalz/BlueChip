@@ -62,6 +62,18 @@ beforeEach(() => {
 });
 
 describe("validation", () => {
+  test("uncertain orders remain tracked and are never announced as fills", async () => {
+    mockedPost.mockResolvedValue({ data: { order: { _id: "pending", status: "UNKNOWN" } } });
+    const { result } = setup();
+    act(() => result.current.setQty("0.1"));
+    await act(async () => { await result.current.submit(); });
+    expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/confirmation pending/i));
+    expect(notifyOrderPlaced).toHaveBeenCalledTimes(1);
+    expect(toast.success).not.toHaveBeenCalled();
+    const key = orderBody().clientOrderId;
+    await act(async () => { await result.current.submit(); });
+    expect(orderBody(1).clientOrderId).toBe(key);
+  });
   test.each([["", "empty"], ["0", "zero"], ["-1", "negative"], ["abc", "non-numeric"]])(
     "a %s quantity (%s) never reaches the API",
     async (value) => {
@@ -115,7 +127,7 @@ describe("idempotency key lifecycle", () => {
     await act(async () => { await result.current.submit(); });
 
     expect(orderBody(1).clientOrderId).not.toBe(orderBody(0).clientOrderId);
-    expect(orderBody(1).qty).toBe(2);
+    expect(orderBody(1).qty).toBe("2");
   });
 
   test("a completed order gets a fresh key next time", async () => {
@@ -149,6 +161,22 @@ describe("duplicate submission", () => {
 });
 
 describe("server outcomes", () => {
+  test("a cancelled IOC remainder does not hide the quantity that actually filled", async () => {
+    mockedPost.mockResolvedValue({ data: { order: { status: "CANCELLED", type: "MARKET", qty: 2, filledQty: 0.5, fillPrice: 50000 } } });
+    const { result } = setup();
+    act(() => result.current.setQty("2"));
+    await act(async () => { await result.current.submit(); });
+    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("Bought 0.5 of 2 BTC"));
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+  test("a partially filled limit keeps its remainder resting", async () => {
+    mockedPost.mockResolvedValue({ data: { order: { status: "PARTIALLY_FILLED", type: "LIMIT", qty: 2, filledQty: 0.5, fillPrice: 49000, limitPrice: 49000 } } });
+    const { result } = setup();
+    act(() => { result.current.setQty("2"); result.current.switchToLimit(); });
+    await act(async () => { await result.current.submit(); });
+    expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/rest.*resting/i));
+    expect(toast.success).not.toHaveBeenCalled();
+  });
   test.each([
     ["FILLED", { status: "FILLED", qty: 1, fillPrice: 50000 }, "success", true],
     ["PARTIALLY_FILLED", { status: "PARTIALLY_FILLED", qty: 2, filledQty: 0.5, fillPrice: 50000 }, "success", true],
@@ -212,4 +240,14 @@ describe("estimated cost", () => {
     act(() => result.current.setQty("abc"));
     expect(result.current.estimated).toBe(0);
   });
+});
+
+
+test("submits original decimal instructions without floating-point conversion", async () => {
+  mockedPost.mockResolvedValue({ data: { order: { status: "UNKNOWN" } } });
+  const { result } = setup();
+  act(() => { result.current.setQty("0.100000000000000001"); result.current.switchToLimit(); });
+  act(() => result.current.setLimitPrice("50000.000000000001"));
+  await act(async () => { await result.current.submit(); });
+  expect(orderBody()).toMatchObject({ qty: "0.100000000000000001", limitPrice: "50000.000000000001" });
 });
