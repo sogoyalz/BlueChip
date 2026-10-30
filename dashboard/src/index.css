@@ -1457,4 +1457,4 @@ input:focus-visible {
 .order-diagnostics > h2 { margin-block: 24px 12px; }
 
 /* Keep notification text readable throughout the entrance animation. */
-.Toastify__toast-container .Toastify__toast-theme--light { color: #555; }
+.Toastify__toast-container .Toastify__toast-theme--light { color: #222; }
