@@ -70,6 +70,7 @@ export const PricesProvider = ({ children }: { children: React.ReactNode }) => {
     let cancelled = false;
     let es: EventSource | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let streamGeneration = 0;
 
     axios
       .get<SymbolInfo[]>(`${API_URL}/api/symbols`)
@@ -87,9 +88,10 @@ export const PricesProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     const fetchPrices = () => {
+      const generation = streamGeneration;
       axios
         .get<PricesPayload>(`${API_URL}/api/prices`)
-        .then((res) => apply(res.data))
+        .then((res) => { if (generation === streamGeneration) apply(res.data); })
         .catch(() => {
           if (cancelled) return;
           if (Date.now() - lastSuccess.current > STALE_AFTER_MS) setIsStale(true);
@@ -109,18 +111,19 @@ export const PricesProvider = ({ children }: { children: React.ReactNode }) => {
         es = new EventSource(`${API_URL}/api/stream`);
         es.addEventListener("prices", (e) => {
           try {
-            apply(JSON.parse((e as MessageEvent).data) as PricesPayload);
+            const payload = JSON.parse((e as MessageEvent).data) as PricesPayload;
+            if (!payload.prices || typeof payload.prices !== "object" || Array.isArray(payload.prices)) return;
+            streamGeneration++;
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            apply(payload);
           } catch {
             // malformed frame — ignore, next one is 2s away
           }
         });
         es.onerror = () => {
-          if (lastSuccess.current === 0) {
-            es?.close();
-            es = null;
-            startPolling();
-          }
-          // else: EventSource retries by itself; keep the last good prices
+          // Keep polling while EventSource reconnects, even after a prior
+          // successful frame. A recovered stream stops the fallback again.
+          startPolling();
         };
       } catch {
         startPolling();

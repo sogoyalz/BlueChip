@@ -112,7 +112,7 @@ const WatchList = () => {
 
 export default WatchList;
 
-const WatchListItem = ({
+const WatchListItem = React.memo(({
   info,
   tick,
 }: {
@@ -156,7 +156,12 @@ const WatchListItem = ({
       <WatchListActions symbol={info.symbol} base={info.base} />
     </li>
   );
-};
+}, (previous, next) =>
+  previous.info === next.info &&
+  previous.tick?.price === next.tick?.price &&
+  previous.tick?.changePct24h === next.tick?.changePct24h &&
+  Boolean(previous.tick) === Boolean(next.tick)
+);
 
 const WatchListActions = ({ symbol, base }: { symbol: string; base: string }) => {
   const generalContext = useContext(GeneralContext);

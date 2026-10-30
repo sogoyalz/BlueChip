@@ -54,6 +54,30 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+test("polls after a stream disconnect and ignores a late poll when the stream recovers", async () => {
+  let finishPoll!: (value: unknown) => void;
+  mockedGet.mockImplementation((url: string) => url.endsWith("/api/prices")
+    ? new Promise((resolve) => { finishPoll = resolve; })
+    : Promise.resolve({ data: [] }));
+  render(<PricesProvider><Probe /></PricesProvider>);
+  act(() => FakeEventSource.last!.emit("prices", { prices: { BTCUSD: tick } }));
+  act(() => FakeEventSource.last!.onerror?.());
+  expect(mockedGet).toHaveBeenCalledWith(expect.stringContaining("/api/prices"));
+  act(() => FakeEventSource.last!.emit("prices", { prices: { BTCUSD: { ...tick, price: 51000 } } }));
+  await act(async () => { finishPoll({ data: { prices: { BTCUSD: { ...tick, price: 49000 } } } }); });
+  expect(screen.getByTestId("btc")).toHaveTextContent("51000");
+  const calls = mockedGet.mock.calls.length;
+  act(() => vi.advanceTimersByTime(5000));
+  expect(mockedGet).toHaveBeenCalledTimes(calls);
+});
+
+test("ignores stream frames without a prices object", () => {
+  render(<PricesProvider><Probe /></PricesProvider>);
+  act(() => FakeEventSource.last!.emit("prices", { prices: { BTCUSD: tick } }));
+  act(() => FakeEventSource.last!.emit("prices", {}));
+  expect(screen.getByTestId("btc")).toHaveTextContent("50000");
+});
+
 describe("stale DATA, as opposed to a stale stream", () => {
   // The broadcaster ships the whole price cache every 2s whether or not
   // anything in it changed. So when Gemini's feed dies, frames keep arriving
