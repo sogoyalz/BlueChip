@@ -5,6 +5,9 @@
     "node": ">=22.22.2"
   },
   "scripts": {
+    "backup:cloud": "node scripts/cloud-operations.mjs backup",
+    "backup:verify": "node scripts/cloud-operations.mjs verify-restore",
+    "monitor:cloud": "node scripts/cloud-operations.mjs monitor",
     "setup": "node scripts/project.mjs setup",
     "setup:browsers": "node scripts/project.mjs browsers",
     "dev": "node scripts/project.mjs dev",

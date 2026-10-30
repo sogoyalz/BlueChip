@@ -86,6 +86,18 @@ New optional persistence fields include `recentEvents`, `reconciliationAttempts`
 
 ## Repeatable external checks and fixture restore
 
+### Private cloud backups and chat alerts
+
+Local operations use the ignored `backend/.env` values `ATLAS_MONGO_URL` and `BACKUP_ENCRYPTION_KEY`. The latter is a 32-byte hexadecimal key; keep a separate secure copy because a lost key makes backups unrecoverable. Neither value belongs in browser configuration or Git. Local development uses the existing `bluechip` database; it is separate from Atlas.
+
+- `npm run backup:cloud` reads Atlas collections, BSON values, collection options, and indexes into an AES-256-GCM encrypted, compressed backup. Files are private (0600) inside ignored `.private/backups` (0700). The latest 14 successful backups are retained. Database writes are never performed by this command. Exports read collections sequentially; they are logical backups, not atomic point-in-time snapshots of concurrent writes.
+- `npm run backup:verify` decrypts the latest backup, rejects a tampered copy, restores only into a temporary isolated MongoDB server, compares all documents and indexes, and removes that temporary server. It cannot restore into the production URI.
+- `npm run monitor:cloud` reads Atlas directly, checks database connectivity, unresolved PENDING/UNKNOWN orders older than ten minutes, and backups older than 36 hours. It prints aggregate counts only and returns a failing status on actionable issues. It does not submit orders, cancel orders, or request the Render website.
+
+Daily backup and hourly operational-alert automations were configured in the desktop app. Backups run at 9 AM local time; Monday runs also verify restoration. Alerts appear in the deployment chat only for new/changed actionable issues or recovery. These local jobs require this computer and the desktop app to be available. They do not provide continuous server-log coverage or guaranteed execution while the computer is asleep. Immediate webhook delivery remains optional; no webhook destination was selected. Idle Render sleep remains enabled under the free-only hosting requirement.
+
+Initial verification restored 270 documents across four collections with matching indexes and rejected ciphertext tampering. The first monitor run reported a reachable database, zero unresolved orders, and a fresh backup. Backup files, keys, and database contents are excluded from Git.
+
 `npm run validate:live` performs read-only public sandbox and configured database checks. Optional `LIVE_LANDING_URL`, `LIVE_DASHBOARD_URL`, and `LIVE_API_URL` enable HTTPS reachability/readiness probes. It reports skipped checks and missing indexes explicitly and does not trade or apply indexes. See [LIVE_VALIDATION_2026-10-29.md](LIVE_VALIDATION_2026-10-29.md) for executed results and limitations.
 
 `npm run rehearse:restore` requires `mongodump`/`mongorestore` on PATH. It dumps and restores generated fixtures between two temporary MongoDB servers and verifies data plus unique-index behavior. It never accesses configured database data. An actual backup policy, encrypted off-host retention, and recovery of real data into a separately provisioned target still need an operational exercise.
