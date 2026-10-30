@@ -1,5 +1,7 @@
 # Predeployment status — October 29, 2026
 
+**Current status: deployed.** The landing page, dashboard, and API run at [bluechip-hn6y.onrender.com](https://bluechip-hn6y.onrender.com/) on Render Free with MongoDB Atlas Free. The sections below record earlier preparation and resolved blockers.
+
 | Item | Verified status |
 | --- | --- |
 | Required database indexes | All present; ten total order indexes, including the required partial unique indexes. No index mutation or destructive migration was needed in this run. |
@@ -51,3 +53,15 @@ The new `sogoyalz/BlueChip` repository was uploaded to `main`. A Render Free Doc
 The remaining prerequisite is a hosted MongoDB database. MongoDB Atlas offers a Free cluster; account sign-in/setup remains a user action. No database migration, public network allowlist change, or paid database provisioning has been performed. Existing local data remains unchanged. After a cloud database is configured, update Render's private `MONGO_URL`, decide which local data should be migrated, redeploy, and verify public HTTPS authentication and the dashboard.
 
 The read-only live validation script now preserves configured URL paths, so `/app/` and `/backend/readyz` are checked correctly when all services share one origin.
+
+## Successful cloud deployment
+
+The existing Atlas Free cluster was resumed without upgrading its tier. A dedicated application user has `readWrite` access to the `bluechip` database. A read-only connection test accepted its saved credential. Render's private `MONGO_URL` was updated to Atlas; the redeployment connected to MongoDB, subscribed to Gemini market data, and reached Live status. No Atlas network allowlist changes or paid resources were created.
+
+With explicit user approval, the existing local `bluechip` database was copied into Atlas while preserving document IDs: 10 users, 9 sandbox orders, 5 holdings, and 244 portfolio snapshots. Every copied ID was verified at the destination, required indexes are present, and a private local backup was saved outside the repository. This preserves the selected operator account ID. The currently configured local development URL points to a separate empty `bluechip_app` database; the migration explicitly used the existing `bluechip` database and did not change the local environment file.
+
+Public trusted-HTTPS checks passed for the landing page, login page, dashboard home, nested orders route, logo asset, readiness, prices, and symbols. Unknown API routes return JSON 404 responses. Orders, session, holdings, and operator endpoints reject anonymous requests with 401. The live validation command passed all public sandbox, Atlas index, and deployed URL checks. An explicitly approved temporary account verified signup, Secure/HttpOnly/SameSite=Lax cookies, authenticated session/orders/holdings/account reads, and logout revocation. No new trades were placed during deployment checks.
+
+Runtime secrets are private Render environment values and are excluded from the repository and client bundles. Render Free idle sleep and paused background work remain portfolio-demo limitations. No external alert destination is configured; operational alerts remain in server logs.
+
+Final browser verification confirmed login opens the deployed dashboard, the nested orders route survives a full reload, and holdings render all five funded sandbox assets. The test account placed no orders and was deleted after verification; the original ten accounts and nine orders remain. A subsequent idle wake returned readiness HTTP 200. A final scan of all 294 tracked files found no configured credential values, including the new Atlas password.

@@ -2,6 +2,10 @@
 
 ![CI](https://github.com/sogoyalz/BlueChip/actions/workflows/ci.yml/badge.svg)
 
+**Live demo:** [bluechip-hn6y.onrender.com](https://bluechip-hn6y.onrender.com/) · [Trading dashboard](https://bluechip-hn6y.onrender.com/app/)
+
+Hosted on Render Free with MongoDB Atlas Free. The service sleeps when idle, so the first visit can take about a minute to wake it. Background reconciliation and snapshots pause while asleep.
+
 A full-stack **crypto trading platform** built with the **MERN stack** (MongoDB, Express, React, Node.js). Anyone can sign up and trade Bitcoin, Ethereum, Solana and more — orders are placed for real against **Gemini's sandbox exchange** (real order matching, real fills, real order lifecycle) using a single shared sandbox account with test funds.
 
 > No real money is ever deposited, withdrawn, or at risk — every order settles on Gemini's **sandbox** (`api.sandbox.gemini.com`), a separate test environment from Gemini's production exchange. "BlueChip" is a fictional brand, not affiliated with Gemini or any real broker. Every trader shares one sandbox account, so balances and holdings are shared across all users; local order history is scoped to its owner.
