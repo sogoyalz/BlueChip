@@ -1092,3 +1092,22 @@ select:focus-visible {
 
 /* Keep notification text readable throughout the entrance animation. */
 .Toastify__toast-container .Toastify__toast-theme--light { color: #555; }
+.auth-password-toggle {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.35rem 0;
+  border: 0;
+  background: transparent;
+  color: #a9c5ff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.auth-password-toggle:focus-visible {
+  outline: 2px solid #a9c5ff;
+  outline-offset: 3px;
+  border-radius: 2px;
+}

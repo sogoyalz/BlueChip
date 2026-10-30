@@ -7,6 +7,7 @@ import { API_URL, DASHBOARD_URL } from "../../config";
 function Login() {
   const [values, setValues] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
     setValues({ ...values, [e.target.name]: e.target.value });
@@ -85,6 +86,7 @@ function Login() {
               id="email"
               type="email"
               name="email"
+              autoComplete="email"
               className="form-control"
               placeholder="you@example.com"
               onChange={handleChange}
@@ -98,13 +100,17 @@ function Login() {
             </label>
             <input
               id="password"
-              type="password"
+              type={showPassword ? "text" : "password"}
               name="password"
+              autoComplete="current-password"
               className="form-control"
               placeholder="Enter your password"
               onChange={handleChange}
               required
             />
+            <button type="button" className="auth-password-toggle" aria-pressed={showPassword} onClick={() => setShowPassword((visible) => !visible)}>
+              {showPassword ? "Hide password" : "Show password"}
+            </button>
           </div>
 
           <button type="submit" className="btn btn-auth" disabled={loading}>
